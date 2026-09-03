@@ -288,7 +288,8 @@ async def _read_acl(client: Any, node_id: int) -> list[dict[str, Any]]:
         if entry is None:
             raise StudioWriteError(
                 "The target Access Control list has an unsupported entry shape "
-                f"at entry {index}: {_acl_shape_summary(raw_entry)}."
+                f"at entry {index}: {_acl_shape_summary(raw_entry)} "
+                f"(table: {_acl_table_shape(value)})."
             )
         entries.append(entry)
     return entries
@@ -485,6 +486,27 @@ def _acl_shape_summary(value: Any) -> str:
         return f"mapping with keys [{keys}]"
     if _is_sequence_struct(value):
         return f"sequence with {len(value)} items"
+    return type(value).__name__
+
+
+def _acl_table_shape(value: Any, depth: int = 0) -> str:
+    """Describe only the container shape of an ACL table for safe diagnostics."""
+    value = _unwrap_value(value)
+    if depth >= 2:
+        return _acl_shape_summary(value)
+    if isinstance(value, Mapping):
+        preview = ", ".join(
+            f"{key}:{_acl_table_shape(child, depth + 1)}"
+            for key, child in list(value.items())[:4]
+        )
+        suffix = ", …" if len(value) > 4 else ""
+        return f"mapping({preview}{suffix})"
+    if _is_sequence_struct(value):
+        preview = ", ".join(
+            _acl_table_shape(child, depth + 1) for child in value[:4]
+        )
+        suffix = ", …" if len(value) > 4 else ""
+        return f"sequence({preview}{suffix})"
     return type(value).__name__
 
 
