@@ -193,7 +193,7 @@ function UnicastComposer({
     : availableTargets;
   const target = targets.find((device) => endpointKey(device) === targetKey);
   const compatibleClusters = source && target
-    ? source.client_capabilities.filter((cluster) => target.server_capabilities.includes(cluster))
+    ? compatibleClustersFor(source, target)
     : [];
 
   const chooseSource = (value: string) => {
@@ -202,19 +202,21 @@ function UnicastComposer({
       (device) => endpointKey(device) === targetKey,
     );
     setSourceKey(value);
-    if (
+    const keepsTarget = !(
       targetKey === value
       || (sameAreaOnly && !sameArea(nextSource, selectedTarget))
-    ) {
+    );
+    if (!keepsTarget) {
       setTargetKey("");
     }
-    setClusters([]);
+    setClusters(keepsTarget ? compatibleClustersFor(nextSource, selectedTarget) : []);
     setPlan(null);
     setMessage(null);
   };
   const chooseTarget = (value: string) => {
+    const nextTarget = targets.find((device) => endpointKey(device) === value);
     setTargetKey(value);
-    setClusters([]);
+    setClusters(compatibleClustersFor(source, nextTarget));
     setPlan(null);
     setMessage(null);
   };
@@ -410,6 +412,13 @@ function stripAreaPrefix(value: string, area: string): string {
 
 function sameArea(source?: Endpoint, target?: Endpoint): boolean {
   return Boolean(source?.area_name && target?.area_name && source.area_name === target.area_name);
+}
+
+function compatibleClustersFor(source?: Endpoint, target?: Endpoint): number[] {
+  if (!source || !target) return [];
+  return source.client_capabilities.filter((cluster) =>
+    target.server_capabilities.includes(cluster),
+  );
 }
 
 function sameLabel(left: string, right: string): boolean {

@@ -280,6 +280,7 @@ async def _read_acl(client: Any, node_id: int) -> list[dict[str, Any]]:
     value = await client.read_attribute(node_id=node_id, attribute_path=path)
     if isinstance(value, Mapping):
         value = value.get(path, value)
+    value = _unwrap_value(value)
     if not isinstance(value, list):
         raise StudioWriteError("The target Access Control list could not be read.")
     entries = [_normalise_acl_entry(entry) for entry in value]
@@ -383,6 +384,7 @@ def _binding_signature(bindings: list[dict[str, int | None]]) -> list[tuple[Any,
 
 
 def _normalise_acl_entry(entry: Any) -> dict[str, Any] | None:
+    entry = _unwrap_value(entry)
     if _is_sequence_struct(entry):
         privilege = entry[0] if len(entry) > 0 else None
         auth_mode = entry[1] if len(entry) > 1 else None
@@ -394,6 +396,8 @@ def _normalise_acl_entry(entry: Any) -> dict[str, Any] | None:
         subjects = _field(entry, ("subjects", "Subjects", 3))
         targets = _field(entry, ("targets", "Targets", 4))
     try:
+        subjects = _unwrap_value(subjects)
+        targets = _unwrap_value(targets)
         normalised_targets = (
             [_normalise_acl_target(target) for target in targets]
             if _is_sequence_struct(targets)
@@ -417,6 +421,7 @@ def _normalise_acl_entry(entry: Any) -> dict[str, Any] | None:
 
 
 def _normalise_acl_target(target: Any) -> dict[str, int | None] | None:
+    target = _unwrap_value(target)
     try:
         return {
             "cluster": _optional_int(_field(target, ("cluster", "Cluster", 0))),
@@ -449,6 +454,13 @@ def _field(value: Any, names: tuple[str | int, ...]) -> Any:
 
 def _is_sequence_struct(value: Any) -> bool:
     return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
+
+
+def _unwrap_value(value: Any) -> Any:
+    """Unwrap Matter Server's serialised value envelope, if present."""
+    while isinstance(value, Mapping) and "value" in value:
+        value = value["value"]
+    return value
 
 
 def _optional_int(value: Any) -> int | None:
