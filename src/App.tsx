@@ -425,7 +425,20 @@ function escapeRegExp(value: string): string {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "The requested Matter operation failed.";
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "object" && error !== null) {
+    const candidate = error as {
+      message?: unknown;
+      error?: { message?: unknown };
+    };
+    if (typeof candidate.message === "string" && candidate.message) {
+      return candidate.message;
+    }
+    if (typeof candidate.error?.message === "string" && candidate.error.message) {
+      return candidate.error.message;
+    }
+  }
+  return "The requested Matter operation failed.";
 }
 
 function StudioData({ snapshot, t }: { snapshot: StudioSnapshot; t: Copy }) {

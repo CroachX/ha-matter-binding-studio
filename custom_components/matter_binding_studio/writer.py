@@ -15,7 +15,7 @@ import asyncio
 import logging
 import secrets
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -383,14 +383,20 @@ def _binding_signature(bindings: list[dict[str, int | None]]) -> list[tuple[Any,
 
 
 def _normalise_acl_entry(entry: Any) -> dict[str, Any] | None:
-    privilege = _field(entry, ("privilege", "Privilege", 1))
-    auth_mode = _field(entry, ("authMode", "auth_mode", "AuthMode", 2))
-    subjects = _field(entry, ("subjects", "Subjects", 3))
-    targets = _field(entry, ("targets", "Targets", 4))
+    if _is_sequence_struct(entry):
+        privilege = entry[0] if len(entry) > 0 else None
+        auth_mode = entry[1] if len(entry) > 1 else None
+        subjects = entry[2] if len(entry) > 2 else None
+        targets = entry[3] if len(entry) > 3 else None
+    else:
+        privilege = _field(entry, ("privilege", "Privilege", 1))
+        auth_mode = _field(entry, ("authMode", "auth_mode", "AuthMode", 2))
+        subjects = _field(entry, ("subjects", "Subjects", 3))
+        targets = _field(entry, ("targets", "Targets", 4))
     try:
         normalised_targets = (
             [_normalise_acl_target(target) for target in targets]
-            if isinstance(targets, list)
+            if _is_sequence_struct(targets)
             else None
         )
         if normalised_targets is not None and any(
@@ -401,7 +407,7 @@ def _normalise_acl_entry(entry: Any) -> dict[str, Any] | None:
             "privilege": int(privilege),
             "authMode": int(auth_mode),
             "subjects": [int(subject) for subject in subjects]
-            if isinstance(subjects, list)
+            if _is_sequence_struct(subjects)
             else None,
             "targets": normalised_targets,
             "fabricIndex": 0,
@@ -430,11 +436,19 @@ def _field(value: Any, names: tuple[str | int, ...]) -> Any:
                 return value[name]
             if str(name) in value:
                 return value[str(name)]
+    elif _is_sequence_struct(value):
+        for name in names:
+            if isinstance(name, int) and 0 <= name < len(value):
+                return value[name]
     else:
         for name in names:
             if isinstance(name, str) and hasattr(value, name):
                 return getattr(value, name)
     return None
+
+
+def _is_sequence_struct(value: Any) -> bool:
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
 
 
 def _optional_int(value: Any) -> int | None:

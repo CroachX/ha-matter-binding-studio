@@ -8408,7 +8408,13 @@ function S(e) {
 	return e.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 function C(e) {
-	return e instanceof Error ? e.message : "The requested Matter operation failed.";
+	if (e instanceof Error && e.message) return e.message;
+	if (typeof e == "object" && e) {
+		let t = e;
+		if (typeof t.message == "string" && t.message) return t.message;
+		if (typeof t.error?.message == "string" && t.error.message) return t.error.message;
+	}
+	return "The requested Matter operation failed.";
 }
 function ne({ snapshot: e, t }) {
 	return /* @__PURE__ */ (0, m.jsxs)("div", {
