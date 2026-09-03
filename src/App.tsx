@@ -295,7 +295,7 @@ function UnicastComposer({
         <label>
           <span>{t.source}</span>
           <select value={sourceKey} onChange={(event) => chooseSource(event.target.value)}>
-            <option value="">{t.chooseSource}</option>
+            <option value="" disabled>{t.chooseSource}</option>
             {sources.map((device) => (
               <option key={endpointKey(device)} value={endpointKey(device)}>
                 {endpointLabel(device)}
@@ -306,7 +306,7 @@ function UnicastComposer({
         <label>
           <span>{t.target}</span>
           <select value={targetKey} onChange={(event) => chooseTarget(event.target.value)}>
-            <option value="">{t.chooseTarget}</option>
+            <option value="" disabled>{t.chooseTarget}</option>
             {targets.map((device) => (
               <option key={endpointKey(device)} value={endpointKey(device)}>
                 {endpointLabel(device)}
@@ -382,23 +382,30 @@ function endpointKey(endpoint: Endpoint): string {
 
 function endpointLabel(endpoint: Endpoint): string {
   const area = endpoint.area_name?.trim() || "";
-  const name = endpoint.name.trim();
-  const deviceLayer = endpointDeviceLayer(endpoint);
-  const prefix = area && !name.includes(area) ? `${area} - ` : "";
+  const name = stripAreaPrefix(endpoint.name.trim(), area);
+  const deviceLayer = endpointDeviceLayer(endpoint, name);
+  const prefix = area ? `${area} - ` : "";
   return deviceLayer ? `${prefix}${deviceLayer} · ${name}` : `${prefix}${name}`;
 }
 
-function endpointDeviceLayer(endpoint: Endpoint): string | null {
-  let nodeName = endpoint.node_name?.trim() || "";
-  const area = endpoint.area_name?.trim() || "";
-  if (area) {
-    const areaPrefix = new RegExp(`^${escapeRegExp(area)}\\s*[-–—]\\s*`);
-    nodeName = nodeName.replace(areaPrefix, "").trim();
-  }
-  if (!nodeName || sameLabel(nodeName, endpoint.name) || sameLabel(nodeName, area)) {
+function endpointDeviceLayer(endpoint: Endpoint, endpointName: string): string | null {
+  const nodeName = stripAreaPrefix(
+    endpoint.node_name?.trim() || "",
+    endpoint.area_name?.trim() || "",
+  );
+  if (!nodeName || sameLabel(nodeName, endpointName)) {
     return null;
   }
   return nodeName;
+}
+
+function stripAreaPrefix(value: string, area: string): string {
+  let result = value;
+  if (area) {
+    const areaPrefix = new RegExp(`^${escapeRegExp(area)}\\s*[-–—]\\s*`);
+    result = result.replace(areaPrefix, "").trim();
+  }
+  return result;
 }
 
 function sameArea(source?: Endpoint, target?: Endpoint): boolean {

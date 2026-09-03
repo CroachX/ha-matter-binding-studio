@@ -230,13 +230,20 @@ def _build_name_index(hass: HomeAssistant) -> dict[str, dict[Any, Any]]:
             )
             if endpoint_id is None:
                 continue
+            priority = _entity_name_priority(entity)
             entity_name = str(entity.name or entity.original_name or "").strip()
+            # HA's primary light entity can intentionally inherit its name
+            # from the device and therefore have no entity/original name.
+            # Prefer that functional light's device name over an Identify
+            # button or a configuration number on the same Matter endpoint.
+            if not entity_name and priority >= 250:
+                entity_name = device_name
             if entity_name:
                 _set_endpoint_name(
                     index,
                     (node_id, endpoint_id),
                     entity_name,
-                    _entity_name_priority(entity),
+                    priority,
                 )
             if area_name:
                 index["endpoint_areas"].setdefault((node_id, endpoint_id), area_name)
