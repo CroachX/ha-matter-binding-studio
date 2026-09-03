@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { copy, type Copy, type Language } from "./copy";
 
 export interface HomeAssistant {
@@ -55,32 +55,42 @@ export type StudioSnapshot = {
 export default function App({ hass }: { hass?: HomeAssistant }) {
   const language = resolveLanguage(hass);
   const t = copy[language];
+  const hassRef = useRef(hass);
+  const hasLoadedRef = useRef(false);
   const [snapshot, setSnapshot] = useState<StudioSnapshot | null>(null);
-  const [loading, setLoading] = useState(Boolean(hass));
+  const [refreshing, setRefreshing] = useState(false);
   const [readFailed, setReadFailed] = useState(false);
 
-  const refresh = async () => {
-    if (!hass) return;
-    setLoading(true);
+  // Home Assistant replaces `hass` whenever any state changes. Keep only the
+  // latest client reference, rather than treating every replacement as a
+  // reason to fetch the Matter fabric again.
+  hassRef.current = hass;
+
+  const refresh = useCallback(async () => {
+    const activeHass = hassRef.current;
+    if (!activeHass) return;
+    setRefreshing(true);
     setReadFailed(false);
     try {
       setSnapshot(
-        await hass.callWS<StudioSnapshot>({
+        await activeHass.callWS<StudioSnapshot>({
           type: "matter_binding_studio/get_snapshot",
         }),
       );
     } catch {
       setReadFailed(true);
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
+    if (!hass || hasLoadedRef.current) return;
+    hasLoadedRef.current = true;
     void refresh();
-    // The panel receives a stable hass instance. Refresh only if HA replaces it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hass]);
+
+  const initialLoading = Boolean(hass) && snapshot === null && refreshing;
 
   return (
     <div className="mbs-root">
@@ -94,9 +104,10 @@ export default function App({ hass }: { hass?: HomeAssistant }) {
           <button
             type="button"
             onClick={() => void refresh()}
-            disabled={!hass || loading}
+            disabled={!hass || refreshing}
+            aria-busy={refreshing}
           >
-            {t.refresh}
+            {refreshing && snapshot ? t.refreshing : t.refresh}
           </button>
         </header>
 
@@ -110,8 +121,8 @@ export default function App({ hass }: { hass?: HomeAssistant }) {
           </p>
         ))}
 
-        {loading ? <p className="mbs-loading">{t.loading}</p> : null}
-        {!loading && snapshot ? <StudioData snapshot={snapshot} t={t} /> : null}
+        {initialLoading ? <p className="mbs-loading">{t.loading}</p> : null}
+        {snapshot ? <StudioData snapshot={snapshot} t={t} /> : null}
       </main>
     </div>
   );

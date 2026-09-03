@@ -5,6 +5,7 @@ const zhHant = {
   subtitle: "以 Home Assistant 名稱檢視原生 Matter Binding",
   readOnly: "唯讀驗證階段",
   refresh: "重新整理",
+  refreshing: "更新中…",
   scope:
     "此版本只讀取原生 Matter 的 Binding、群組與已快取的容量；不會建立或變更 Binding、群組、ACL 或 Group Key。",
   loading: "正在讀取 Matter Fabric…",
@@ -37,6 +38,7 @@ const en: typeof zhHant = {
   subtitle: "Inspect native Matter bindings with Home Assistant names",
   readOnly: "Read-only validation",
   refresh: "Refresh",
+  refreshing: "Refreshing…",
   scope:
     "This version only reads native Matter bindings, groups, and cached capacity. It does not create or change a binding, group, ACL, or Group Key.",
   loading: "Reading the Matter fabric…",

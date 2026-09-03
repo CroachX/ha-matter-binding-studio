@@ -8041,6 +8041,7 @@ var t = (e, t) => () => (t || (e((t = { exports: {} }).exports, t), e = null), t
 		subtitle: "以 Home Assistant 名稱檢視原生 Matter Binding",
 		readOnly: "唯讀驗證階段",
 		refresh: "重新整理",
+		refreshing: "更新中…",
 		scope: "此版本只讀取原生 Matter 的 Binding、群組與已快取的容量；不會建立或變更 Binding、群組、ACL 或 Group Key。",
 		loading: "正在讀取 Matter Fabric…",
 		readFailed: "目前無法讀取 Matter Fabric，請稍後重新整理。",
@@ -8069,6 +8070,7 @@ var t = (e, t) => () => (t || (e((t = { exports: {} }).exports, t), e = null), t
 		subtitle: "Inspect native Matter bindings with Home Assistant names",
 		readOnly: "Read-only validation",
 		refresh: "Refresh",
+		refreshing: "Refreshing…",
 		scope: "This version only reads native Matter bindings, groups, and cached capacity. It does not create or change a binding, group, ACL, or Group Key.",
 		loading: "Reading the Matter fabric…",
 		readFailed: "Matter Fabric could not be read. Please try refreshing again.",
@@ -8111,21 +8113,26 @@ var t = (e, t) => () => (t || (e((t = { exports: {} }).exports, t), e = null), t
 	t.exports = p();
 })))();
 function h({ hass: e }) {
-	let t = f[ne(e)], [n, r] = (0, u.useState)(null), [i, a] = (0, u.useState)(!!e), [o, s] = (0, u.useState)(!1), c = async () => {
+	let t = f[ne(e)], n = (0, u.useRef)(e), r = (0, u.useRef)(!1), [i, a] = (0, u.useState)(null), [o, s] = (0, u.useState)(!1), [c, l] = (0, u.useState)(!1);
+	n.current = e;
+	let d = (0, u.useCallback)(async () => {
+		let e = n.current;
 		if (e) {
-			a(!0), s(!1);
+			s(!0), l(!1);
 			try {
-				r(await e.callWS({ type: "matter_binding_studio/get_snapshot" }));
+				a(await e.callWS({ type: "matter_binding_studio/get_snapshot" }));
 			} catch {
-				s(!0);
+				l(!0);
 			} finally {
-				a(!1);
+				s(!1);
 			}
 		}
-	};
-	return (0, u.useEffect)(() => {
-		c();
-	}, [e]), /* @__PURE__ */ (0, m.jsx)("div", {
+	}, []);
+	(0, u.useEffect)(() => {
+		!e || r.current || (r.current = !0, d());
+	}, [e]);
+	let p = !!e && i === null && o;
+	return /* @__PURE__ */ (0, m.jsx)("div", {
 		className: "mbs-root",
 		children: /* @__PURE__ */ (0, m.jsxs)("main", {
 			className: "mbs-panel",
@@ -8141,9 +8148,10 @@ function h({ hass: e }) {
 						/* @__PURE__ */ (0, m.jsx)("p", { children: t.subtitle })
 					] }), /* @__PURE__ */ (0, m.jsx)("button", {
 						type: "button",
-						onClick: () => void c(),
-						disabled: !e || i,
-						children: t.refresh
+						onClick: () => void d(),
+						disabled: !e || o,
+						"aria-busy": o,
+						children: o && i ? t.refreshing : t.refresh
 					})]
 				}),
 				/* @__PURE__ */ (0, m.jsx)("p", {
@@ -8154,20 +8162,20 @@ function h({ hass: e }) {
 					className: "mbs-notice",
 					children: t.notConnected
 				}),
-				o ? /* @__PURE__ */ (0, m.jsx)("p", {
+				c ? /* @__PURE__ */ (0, m.jsx)("p", {
 					className: "mbs-warning",
 					children: t.readFailed
 				}) : null,
-				n?.warnings.map((e) => /* @__PURE__ */ (0, m.jsx)("p", {
+				i?.warnings.map((e) => /* @__PURE__ */ (0, m.jsx)("p", {
 					className: "mbs-warning",
 					children: e
 				}, e)),
-				i ? /* @__PURE__ */ (0, m.jsx)("p", {
+				p ? /* @__PURE__ */ (0, m.jsx)("p", {
 					className: "mbs-loading",
 					children: t.loading
 				}) : null,
-				!i && n ? /* @__PURE__ */ (0, m.jsx)(g, {
-					snapshot: n,
+				i ? /* @__PURE__ */ (0, m.jsx)(g, {
+					snapshot: i,
 					t
 				}) : null
 			]
