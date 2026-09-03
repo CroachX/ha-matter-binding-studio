@@ -351,7 +351,7 @@ function endpointLabel(endpoint: Endpoint): string {
   if (!endpoint.area_name || endpoint.name.includes(endpoint.area_name)) {
     return endpoint.name;
   }
-  return `${endpoint.name} · ${endpoint.area_name}`;
+  return `${endpoint.area_name} - ${endpoint.name}`;
 }
 
 function errorMessage(error: unknown): string {

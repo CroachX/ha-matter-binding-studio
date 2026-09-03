@@ -8360,7 +8360,7 @@ function _(e) {
 	return `${e.node_id}:${e.endpoint_id}`;
 }
 function v(e) {
-	return !e.area_name || e.name.includes(e.area_name) ? e.name : `${e.name} · ${e.area_name}`;
+	return !e.area_name || e.name.includes(e.area_name) ? e.name : `${e.area_name} - ${e.name}`;
 }
 function y(e) {
 	return e instanceof Error ? e.message : "The requested Matter operation failed.";
