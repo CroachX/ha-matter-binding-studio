@@ -281,14 +281,17 @@ async def _read_acl(client: Any, node_id: int) -> list[dict[str, Any]]:
     if isinstance(value, Mapping):
         value = value.get(path, value)
     value = _unwrap_value(value)
-    if not isinstance(value, list):
-        raise StudioWriteError("The target Access Control list could not be read.")
-    entries = [_normalise_acl_entry(entry) for entry in value]
-    if any(entry is None for entry in entries):
-        raise StudioWriteError(
-            "The target Access Control list has an unsupported entry shape."
-        )
-    return [entry for entry in entries if entry is not None]
+    raw_entries = _acl_entries(value)
+    entries: list[dict[str, Any]] = []
+    for index, raw_entry in enumerate(raw_entries):
+        entry = _normalise_acl_entry(raw_entry)
+        if entry is None:
+            raise StudioWriteError(
+                "The target Access Control list has an unsupported entry shape "
+                f"at entry {index}: {_acl_shape_summary(raw_entry)}."
+            )
+        entries.append(entry)
+    return entries
 
 
 async def _read_fabric_index(client: Any, node_id: int) -> int:
@@ -418,6 +421,50 @@ def _normalise_acl_entry(entry: Any) -> dict[str, Any] | None:
         }
     except (TypeError, ValueError):
         return None
+
+
+def _acl_entries(value: Any) -> list[Any]:
+    """Flatten a Matter Server ACL table into individual ACL entry structs.
+
+    Matter Server versions have represented the table as a list, a mapping
+    keyed by list index, and a list containing that mapping. Keep the
+    interpretation strict: only a value with scalar privilege and auth-mode
+    fields is treated as an ACL entry.
+    """
+    value = _unwrap_value(value)
+    if _looks_like_acl_entry(value):
+        return [value]
+    if _is_sequence_struct(value):
+        return [entry for item in value for entry in _acl_entries(item)]
+    if isinstance(value, Mapping):
+        return [entry for item in value.values() for entry in _acl_entries(item)]
+    return [value]
+
+
+def _looks_like_acl_entry(value: Any) -> bool:
+    if _is_sequence_struct(value):
+        privilege = value[0] if len(value) > 0 else None
+        auth_mode = value[1] if len(value) > 1 else None
+    else:
+        privilege = _field(value, ("privilege", "Privilege", 1))
+        auth_mode = _field(value, ("authMode", "auth_mode", "AuthMode", 2))
+    try:
+        int(privilege)
+        int(auth_mode)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _acl_shape_summary(value: Any) -> str:
+    """Return safe structural evidence without exposing ACL values."""
+    value = _unwrap_value(value)
+    if isinstance(value, Mapping):
+        keys = ", ".join(str(key) for key in list(value)[:6])
+        return f"mapping with keys [{keys}]"
+    if _is_sequence_struct(value):
+        return f"sequence with {len(value)} items"
+    return type(value).__name__
 
 
 def _normalise_acl_target(target: Any) -> dict[str, int | None] | None:
