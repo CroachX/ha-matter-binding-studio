@@ -284,6 +284,12 @@ async def _read_acl(client: Any, node_id: int) -> list[dict[str, Any]]:
     raw_entries = _acl_entries(value)
     entries: list[dict[str, Any]] = []
     for index, raw_entry in enumerate(raw_entries):
+        if _is_fabric_index_marker(raw_entry):
+            # Some servers expose foreign-fabric ACLs as a FabricIndex-only
+            # marker. ACL writes are fabric-scoped, so this marker must not be
+            # echoed into the local fabric's replacement list.
+            _LOGGER.debug("Ignoring an opaque foreign-fabric ACL marker")
+            continue
         entry = _normalise_acl_entry(raw_entry)
         if entry is None:
             raise StudioWriteError(
@@ -423,6 +429,8 @@ def _acl_entries(value: Any) -> list[Any]:
     fields is treated as an ACL entry.
     """
     value = _unwrap_value(value)
+    if _is_fabric_index_marker(value):
+        return [value]
     if _looks_like_acl_entry(value):
         return [value]
     if _is_sequence_struct(value):
@@ -476,6 +484,15 @@ def _fields_start_with_scalars(fields: tuple[Any, Any, Any, Any]) -> bool:
     except (TypeError, ValueError):
         return False
     return True
+
+
+def _is_fabric_index_marker(entry: Any) -> bool:
+    """Recognise an ACL marker that reveals only a foreign FabricIndex."""
+    entry = _unwrap_value(entry)
+    if not isinstance(entry, Mapping) or len(entry) != 1:
+        return False
+    key = next(iter(entry))
+    return key in (254, "254", "fabricIndex", "FabricIndex")
 
 
 def _acl_shape_summary(value: Any) -> str:
@@ -606,7 +623,7 @@ def _new_case_acl(
 
 async def _write_acl(client: Any, node_id: int, entries: list[dict[str, Any]]) -> None:
     ordered = sorted(
-        entries,
+        (_encode_acl_entry(entry) for entry in entries),
         key=lambda entry: entry["privilege"] != _ACL_PRIVILEGE_ADMINISTER,
     )
     if not _has_admin_acl(ordered):
@@ -621,6 +638,31 @@ async def _write_acl(client: Any, node_id: int, entries: list[dict[str, Any]]) -
     result = await send_raw_command("set_acl_entry", node_id=node_id, entry=ordered)
     if _write_result_failed(result):
         raise StudioWriteError("The target device rejected the Access Control update.")
+
+
+def _encode_acl_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Encode a local-fabric ACL entry for both Matter Server backends."""
+    targets = entry.get("targets")
+    encoded_targets = (
+        [
+            {
+                "cluster": target.get("cluster"),
+                "endpoint": target.get("endpoint"),
+                "deviceType": target.get("deviceType"),
+                "device_type": target.get("deviceType"),
+            }
+            for target in targets
+        ]
+        if targets is not None
+        else None
+    )
+    return {
+        "privilege": entry["privilege"],
+        "authMode": entry["authMode"],
+        "auth_mode": entry["authMode"],
+        "subjects": entry.get("subjects"),
+        "targets": encoded_targets,
+    }
 
 
 def _write_result_failed(result: Any) -> bool:
