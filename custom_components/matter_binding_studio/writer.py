@@ -387,17 +387,7 @@ def _binding_signature(bindings: list[dict[str, int | None]]) -> list[tuple[Any,
 
 
 def _normalise_acl_entry(entry: Any) -> dict[str, Any] | None:
-    entry = _unwrap_value(entry)
-    if _is_sequence_struct(entry):
-        privilege = entry[0] if len(entry) > 0 else None
-        auth_mode = entry[1] if len(entry) > 1 else None
-        subjects = entry[2] if len(entry) > 2 else None
-        targets = entry[3] if len(entry) > 3 else None
-    else:
-        privilege = _field(entry, ("privilege", "Privilege", 1))
-        auth_mode = _field(entry, ("authMode", "auth_mode", "AuthMode", 2))
-        subjects = _field(entry, ("subjects", "Subjects", 3))
-        targets = _field(entry, ("targets", "Targets", 4))
+    privilege, auth_mode, subjects, targets = _acl_entry_fields(entry)
     try:
         subjects = _unwrap_value(subjects)
         targets = _unwrap_value(targets)
@@ -442,15 +432,46 @@ def _acl_entries(value: Any) -> list[Any]:
 
 
 def _looks_like_acl_entry(value: Any) -> bool:
-    if _is_sequence_struct(value):
-        privilege = value[0] if len(value) > 0 else None
-        auth_mode = value[1] if len(value) > 1 else None
-    else:
-        privilege = _field(value, ("privilege", "Privilege", 1))
-        auth_mode = _field(value, ("authMode", "auth_mode", "AuthMode", 2))
+    privilege, auth_mode, _, _ = _acl_entry_fields(value)
     try:
         int(privilege)
         int(auth_mode)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _acl_entry_fields(entry: Any) -> tuple[Any, Any, Any, Any]:
+    """Read ACL fields from named, Matter-tagged, or zero-based structs."""
+    entry = _unwrap_value(entry)
+    if _is_sequence_struct(entry):
+        return (
+            entry[0] if len(entry) > 0 else None,
+            entry[1] if len(entry) > 1 else None,
+            entry[2] if len(entry) > 2 else None,
+            entry[3] if len(entry) > 3 else None,
+        )
+
+    standard = (
+        _field(entry, ("privilege", "Privilege", 1)),
+        _field(entry, ("authMode", "auth_mode", "AuthMode", 2)),
+        _field(entry, ("subjects", "Subjects", 3)),
+        _field(entry, ("targets", "Targets", 4)),
+    )
+    if _fields_start_with_scalars(standard):
+        return standard
+    return (
+        _field(entry, ("privilege", "Privilege", 0)),
+        _field(entry, ("authMode", "auth_mode", "AuthMode", 1)),
+        _field(entry, ("subjects", "Subjects", 2)),
+        _field(entry, ("targets", "Targets", 3)),
+    )
+
+
+def _fields_start_with_scalars(fields: tuple[Any, Any, Any, Any]) -> bool:
+    try:
+        int(fields[0])
+        int(fields[1])
     except (TypeError, ValueError):
         return False
     return True
