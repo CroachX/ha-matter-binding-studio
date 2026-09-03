@@ -348,7 +348,10 @@ function endpointKey(endpoint: Endpoint): string {
 }
 
 function endpointLabel(endpoint: Endpoint): string {
-  return endpoint.area_name ? `${endpoint.name} · ${endpoint.area_name}` : endpoint.name;
+  if (!endpoint.area_name || endpoint.name.includes(endpoint.area_name)) {
+    return endpoint.name;
+  }
+  return `${endpoint.name} · ${endpoint.area_name}`;
 }
 
 function errorMessage(error: unknown): string {

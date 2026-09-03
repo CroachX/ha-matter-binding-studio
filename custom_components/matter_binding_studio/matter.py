@@ -174,6 +174,7 @@ def _build_name_index(hass: HomeAssistant) -> dict[str, dict[Any, Any]]:
         "node_names": {},
         "node_areas": {},
         "endpoint_names": {},
+        "endpoint_name_priorities": {},
         "endpoint_areas": {},
         "endpoint_device_names": {},
     }
@@ -230,10 +231,55 @@ def _build_name_index(hass: HomeAssistant) -> dict[str, dict[Any, Any]]:
                 continue
             entity_name = str(entity.name or entity.original_name or "").strip()
             if entity_name:
-                index["endpoint_names"].setdefault((node_id, endpoint_id), entity_name)
+                _set_endpoint_name(
+                    index,
+                    (node_id, endpoint_id),
+                    entity_name,
+                    _entity_name_priority(entity),
+                )
             if area_name:
                 index["endpoint_areas"].setdefault((node_id, endpoint_id), area_name)
     return index
+
+
+def _set_endpoint_name(
+    index: dict[str, dict[Any, Any]],
+    endpoint_key: tuple[int, int],
+    candidate: str,
+    priority: int,
+) -> None:
+    """Keep the most meaningful HA entity label for one Matter endpoint.
+
+    A functional light endpoint often exposes several HA entities: a light,
+    identify button, start-up behaviour select, and level numbers. Registry
+    iteration order must not make the identify button become its device name.
+    """
+    existing_priority = index["endpoint_name_priorities"].get(endpoint_key, -1)
+    if priority > existing_priority:
+        index["endpoint_names"][endpoint_key] = candidate
+        index["endpoint_name_priorities"][endpoint_key] = priority
+
+
+def _entity_name_priority(entity: Any) -> int:
+    """Rank control entities above auxiliary and diagnostic entities."""
+    domain = str(getattr(entity, "domain", "") or "").lower()
+    if not domain:
+        domain = str(getattr(entity, "entity_id", "")).split(".", maxsplit=1)[0]
+    if domain in {"light", "fan", "cover", "climate", "lock", "media_player"}:
+        return 300
+    if domain in {"switch", "valve", "vacuum", "water_heater"}:
+        return 250
+    if domain in {
+        "button",
+        "event",
+        "sensor",
+        "binary_sensor",
+        "number",
+        "select",
+        "update",
+    }:
+        return 100
+    return 150
 
 
 def _parse_matter_identifier(
