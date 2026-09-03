@@ -306,8 +306,16 @@ def _endpoint_from_unique_id(
     suffix_index = unique_id.upper().find(marker)
     if suffix_index == -1:
         return None
+    suffix_segments = unique_id[suffix_index + len(marker) :].split("-")
+    # Root Matter devices use unique IDs such as
+    # ``…-000000000000000D-MatterNodeDevice-2-MatterLight-6-0``.
+    # The endpoint is the first numeric segment after ``MatterNodeDevice``;
+    # bridged entities keep the older numeric-leading representation.
+    if suffix_segments and suffix_segments[0].casefold() == "matternodedevice":
+        suffix_segments = suffix_segments[1:]
+
     numeric_segments: list[int] = []
-    for segment in unique_id[suffix_index + len(marker) :].split("-"):
+    for segment in suffix_segments:
         if not segment.isdigit():
             break
         numeric_segments.append(int(segment))
