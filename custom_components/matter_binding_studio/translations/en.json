@@ -1,0 +1,14 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "Matter Binding Studio is already configured.",
+      "matter_not_configured": "Set up the Matter integration before adding Matter Binding Studio."
+    },
+    "step": {
+      "user": {
+        "title": "Matter Binding Studio",
+        "description": "Add the administrator-only native Matter Binding Studio panel."
+      }
+    }
+  }
+}
