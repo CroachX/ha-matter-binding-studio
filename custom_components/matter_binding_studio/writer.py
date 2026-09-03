@@ -630,12 +630,14 @@ async def _write_acl(client: Any, node_id: int, entries: list[dict[str, Any]]) -
         raise StudioWriteError(
             "Refusing to write an ACL without an administrator entry."
         )
-    send_raw_command = getattr(client, "send_raw_command", None)
-    if not callable(send_raw_command):
+    send_command = getattr(client, "send_raw_command", None)
+    if not callable(send_command):
+        send_command = getattr(client, "send_command", None)
+    if not callable(send_command):
         raise StudioWriteError(
             "This Home Assistant Matter client cannot safely update ACLs."
         )
-    result = await send_raw_command("set_acl_entry", node_id=node_id, entry=ordered)
+    result = await send_command("set_acl_entry", node_id=node_id, entry=ordered)
     if _write_result_failed(result):
         raise StudioWriteError("The target device rejected the Access Control update.")
 
