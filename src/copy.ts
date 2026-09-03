@@ -3,11 +3,11 @@ export type Language = "zh-Hant" | "en";
 const zhHant = {
   appName: "Matter Binding Studio",
   subtitle: "以 Home Assistant 名稱檢視原生 Matter Binding",
-  readOnly: "唯讀驗證階段",
+  directBinding: "原生直接 Binding",
   refresh: "重新整理",
   refreshing: "更新中…",
   scope:
-    "此版本只讀取原生 Matter 的 Binding、群組與已快取的容量；不會建立或變更 Binding、群組、ACL 或 Group Key。",
+    "可建立並驗證單一目標的原生 unicast Binding。多目標的原生 groupcast 會在另一個受控交易中加入。",
   loading: "正在讀取 Matter Fabric…",
   readFailed: "目前無法讀取 Matter Fabric，請稍後重新整理。",
   notConnected: "此預覽尚未連接到 Home Assistant。",
@@ -31,16 +31,32 @@ const zhHant = {
   onOff: "開關",
   brightness: "亮度",
   colorTemperature: "色溫",
+  addRelationship: "新增控制關係",
+  addRelationshipDescription:
+    "先選來源、目標與能力，再檢視實際會寫入的原生 Matter 交易。",
+  source: "控制來源",
+  target: "控制目標",
+  chooseSource: "選擇可 Binding 的控制來源",
+  chooseTarget: "選擇輸出目標",
+  capabilities: "要控制的能力",
+  noSharedCapabilities: "這兩個 endpoint 沒有可共同 Binding 的能力。",
+  reviewPlan: "檢視寫入計畫",
+  reviewTitle: "確認原生 Matter 寫入",
+  aclWillAdd: "寫入前會在目標裝置補上必要的操作 ACL。",
+  aclAlreadyGranted: "目標裝置已經具備必要的操作 ACL。",
+  confirmWrite: "我已確認此操作會變更真實 Matter 裝置的 ACL 與 Binding。",
+  applyBinding: "寫入並讀回驗證",
+  working: "處理中…",
 };
 
 const en: typeof zhHant = {
   appName: "Matter Binding Studio",
   subtitle: "Inspect native Matter bindings with Home Assistant names",
-  readOnly: "Read-only validation",
+  directBinding: "Native direct binding",
   refresh: "Refresh",
   refreshing: "Refreshing…",
   scope:
-    "This version only reads native Matter bindings, groups, and cached capacity. It does not create or change a binding, group, ACL, or Group Key.",
+    "Create and verify single-target native unicast bindings. Native groupcast for multiple targets will be a separate guarded transaction.",
   loading: "Reading the Matter fabric…",
   readFailed: "Matter Fabric could not be read. Please try refreshing again.",
   notConnected: "This preview is not connected to Home Assistant.",
@@ -65,6 +81,22 @@ const en: typeof zhHant = {
   onOff: "On / Off",
   brightness: "Brightness",
   colorTemperature: "Color temperature",
+  addRelationship: "Add control relationship",
+  addRelationshipDescription:
+    "Choose a source, target, and capability, then review the native Matter transaction before any device is changed.",
+  source: "Control source",
+  target: "Control target",
+  chooseSource: "Choose a bindable control source",
+  chooseTarget: "Choose an output target",
+  capabilities: "Capabilities to control",
+  noSharedCapabilities: "These endpoints have no compatible binding capability.",
+  reviewPlan: "Review write plan",
+  reviewTitle: "Confirm native Matter write",
+  aclWillAdd: "The required operate ACL will be added to the target before binding.",
+  aclAlreadyGranted: "The target already grants the required operate ACL.",
+  confirmWrite: "I understand this changes the real Matter device ACL and Binding.",
+  applyBinding: "Write and verify",
+  working: "Working…",
 };
 
 export const copy = { "zh-Hant": zhHant, en };

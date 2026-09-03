@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { copy, type Copy, type Language } from "./copy";
 
 export interface HomeAssistant {
-  callWS<T>(message: { type: string }): Promise<T>;
+  callWS<T>(message: { type: string; [key: string]: unknown }): Promise<T>;
   language?: string;
   locale?: { language?: string };
 }
@@ -13,6 +13,10 @@ type Endpoint = {
   name: string;
   area_name: string | null;
   capabilities: number[];
+  client_capabilities: number[];
+  server_capabilities: number[];
+  can_bind: boolean;
+  can_be_target: boolean;
 };
 
 type Relationship = {
@@ -46,10 +50,30 @@ type Capacity = {
 };
 
 export type StudioSnapshot = {
+  devices: Endpoint[];
   relationships: Relationship[];
   native_control_sets: ControlSet[];
   capacities: Capacity[];
   warnings: string[];
+};
+
+type UnicastPlan = {
+  plan_id: string;
+  expires_in_seconds: number;
+  route: "direct";
+  source: Endpoint;
+  target: Endpoint;
+  clusters: number[];
+  existing_binding_count: number;
+  acl: "will_add" | "already_granted";
+  steps: string[];
+};
+
+type ApplyResult = {
+  success: boolean;
+  verified: boolean;
+  repair_needed?: boolean;
+  message: string;
 };
 
 export default function App({ hass }: { hass?: HomeAssistant }) {
@@ -97,7 +121,7 @@ export default function App({ hass }: { hass?: HomeAssistant }) {
       <main className="mbs-panel">
         <header className="mbs-header">
           <div>
-            <span className="mbs-eyebrow">{t.readOnly}</span>
+            <span className="mbs-eyebrow">{t.directBinding}</span>
             <h1>{t.appName}</h1>
             <p>{t.subtitle}</p>
           </div>
@@ -122,10 +146,213 @@ export default function App({ hass }: { hass?: HomeAssistant }) {
         ))}
 
         {initialLoading ? <p className="mbs-loading">{t.loading}</p> : null}
-        {snapshot ? <StudioData snapshot={snapshot} t={t} /> : null}
+        {snapshot ? (
+          <>
+            <UnicastComposer
+              hass={hass}
+              snapshot={snapshot}
+              refresh={refresh}
+              t={t}
+            />
+            <StudioData snapshot={snapshot} t={t} />
+          </>
+        ) : null}
       </main>
     </div>
   );
+}
+
+function UnicastComposer({
+  hass,
+  snapshot,
+  refresh,
+  t,
+}: {
+  hass?: HomeAssistant;
+  snapshot: StudioSnapshot;
+  refresh: () => Promise<void>;
+  t: Copy;
+}) {
+  const [sourceKey, setSourceKey] = useState("");
+  const [targetKey, setTargetKey] = useState("");
+  const [clusters, setClusters] = useState<number[]>([]);
+  const [plan, setPlan] = useState<UnicastPlan | null>(null);
+  const [working, setWorking] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const sources = snapshot.devices.filter((device) => device.can_bind);
+  const targets = snapshot.devices.filter(
+    (device) => device.can_be_target && endpointKey(device) !== sourceKey,
+  );
+  const source = sources.find((device) => endpointKey(device) === sourceKey);
+  const target = targets.find((device) => endpointKey(device) === targetKey);
+  const compatibleClusters = source && target
+    ? source.client_capabilities.filter((cluster) => target.server_capabilities.includes(cluster))
+    : [];
+
+  const chooseSource = (value: string) => {
+    setSourceKey(value);
+    if (targetKey === value) setTargetKey("");
+    setClusters([]);
+    setPlan(null);
+    setMessage(null);
+  };
+  const chooseTarget = (value: string) => {
+    setTargetKey(value);
+    setClusters([]);
+    setPlan(null);
+    setMessage(null);
+  };
+  const toggleCluster = (cluster: number) => {
+    setPlan(null);
+    setClusters((selected) =>
+      selected.includes(cluster)
+        ? selected.filter((item) => item !== cluster)
+        : [...selected, cluster],
+    );
+  };
+
+  const prepare = async () => {
+    if (!hass || !source || !target || !clusters.length) return;
+    setWorking(true);
+    setMessage(null);
+    try {
+      const nextPlan = await hass.callWS<UnicastPlan>({
+        type: "matter_binding_studio/prepare_unicast",
+        source_node_id: source.node_id,
+        source_endpoint_id: source.endpoint_id,
+        target_node_id: target.node_id,
+        target_endpoint_id: target.endpoint_id,
+        clusters,
+      });
+      setConfirmed(false);
+      setPlan(nextPlan);
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const apply = async () => {
+    if (!hass || !plan || !confirmed) return;
+    setWorking(true);
+    setMessage(null);
+    try {
+      const result = await hass.callWS<ApplyResult>({
+        type: "matter_binding_studio/apply_unicast",
+        plan_id: plan.plan_id,
+        confirm: true,
+      });
+      setMessage(result.message);
+      if (result.success && result.verified) {
+        await refresh();
+      }
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      // A reviewed plan is single-use, even when its write needs repair.
+      setPlan(null);
+      setConfirmed(false);
+      setWorking(false);
+    }
+  };
+
+  return (
+    <section className="mbs-composer">
+      <div className="mbs-section-title">
+        <h2>{t.addRelationship}</h2>
+        <span>{t.direct}</span>
+      </div>
+      <p className="mbs-description">{t.addRelationshipDescription}</p>
+      <div className="mbs-form-grid">
+        <label>
+          <span>{t.source}</span>
+          <select value={sourceKey} onChange={(event) => chooseSource(event.target.value)}>
+            <option value="">{t.chooseSource}</option>
+            {sources.map((device) => (
+              <option key={endpointKey(device)} value={endpointKey(device)}>
+                {endpointLabel(device)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>{t.target}</span>
+          <select value={targetKey} onChange={(event) => chooseTarget(event.target.value)}>
+            <option value="">{t.chooseTarget}</option>
+            {targets.map((device) => (
+              <option key={endpointKey(device)} value={endpointKey(device)}>
+                {endpointLabel(device)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {source && target ? (
+        <fieldset className="mbs-capability-picker">
+          <legend>{t.capabilities}</legend>
+          {compatibleClusters.length ? compatibleClusters.map((cluster) => (
+            <label key={cluster}>
+              <input
+                type="checkbox"
+                checked={clusters.includes(cluster)}
+                onChange={() => toggleCluster(cluster)}
+              />
+              {clusterName(cluster, t)}
+            </label>
+          )) : <p className="mbs-warning">{t.noSharedCapabilities}</p>}
+        </fieldset>
+      ) : null}
+      <div className="mbs-actions">
+        <button
+          type="button"
+          onClick={() => void prepare()}
+          disabled={!source || !target || !clusters.length || working}
+        >
+          {working ? t.working : t.reviewPlan}
+        </button>
+      </div>
+      {plan ? (
+        <div className="mbs-review">
+          <strong>{t.reviewTitle}</strong>
+          <p>{endpointLabel(plan.source)} → {endpointLabel(plan.target)}</p>
+          <CapabilityList clusters={plan.clusters} t={t} />
+          <ul>
+            {plan.steps.map((step) => <li key={step}>{step}</li>)}
+          </ul>
+          <p className="mbs-meta">
+            {plan.acl === "will_add" ? t.aclWillAdd : t.aclAlreadyGranted}
+          </p>
+          <label className="mbs-confirm">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(event) => setConfirmed(event.target.checked)}
+            />
+            {t.confirmWrite}
+          </label>
+          <button type="button" onClick={() => void apply()} disabled={!confirmed || working}>
+            {working ? t.working : t.applyBinding}
+          </button>
+        </div>
+      ) : null}
+      {message ? <p className="mbs-warning">{message}</p> : null}
+    </section>
+  );
+}
+
+function endpointKey(endpoint: Endpoint): string {
+  return `${endpoint.node_id}:${endpoint.endpoint_id}`;
+}
+
+function endpointLabel(endpoint: Endpoint): string {
+  return endpoint.area_name ? `${endpoint.name} · ${endpoint.area_name}` : endpoint.name;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "The requested Matter operation failed.";
 }
 
 function StudioData({ snapshot, t }: { snapshot: StudioSnapshot; t: Copy }) {

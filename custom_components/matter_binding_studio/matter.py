@@ -92,6 +92,8 @@ async def async_get_snapshot(hass: HomeAssistant) -> dict[str, Any]:
                 "name": _endpoint_name(names, node_id, endpoint_id, node_name),
                 "area_name": _endpoint_area(names, node_id, endpoint_id),
                 "capabilities": server_controls or client_controls,
+                "client_capabilities": client_controls,
+                "server_capabilities": server_controls,
                 "can_bind": bool(has_binding and client_controls),
                 "can_be_target": bool(server_controls),
             }
@@ -604,6 +606,8 @@ def _unavailable_endpoint() -> dict[str, Any]:
         "name": "Unavailable Matter endpoint",
         "area_name": None,
         "capabilities": [],
+        "client_capabilities": [],
+        "server_capabilities": [],
         "can_bind": False,
         "can_be_target": False,
     }

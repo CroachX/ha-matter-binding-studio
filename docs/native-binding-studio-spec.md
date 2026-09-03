@@ -1,8 +1,9 @@
 # Native Matter Binding Studio — Specification
 
-Status: approved product direction. The initial HACS integration implements
-only read-only fabric discovery; this document does not authorize live Matter
-configuration changes.
+Status: approved product direction. HACS `0.2.0` implements guarded,
+single-target native unicast creation with Binding Cluster readback. The
+remaining multi-target groupcast and removal transactions require their own
+implementation and verification before release.
 
 ## Confirmed direction
 

@@ -1,26 +1,31 @@
 # Matter Binding Studio
 
-An administrator-only Home Assistant panel for inspecting and later
+An administrator-only Home Assistant panel for inspecting and safely
 provisioning **native** Matter Binding Cluster relationships.
 
 This is an independent custom integration. It does not replace or modify
 `ha-matter-binding-helper`, MatterLogicHub, Home Assistant dashboards, or
 family-facing controls.
 
-## Initial scope: read-only validation
+## Current scope: verified direct bindings
 
-Version `0.1.0` reads the existing Matter fabric and presents:
+Version `0.2.0` reads the existing Matter fabric and presents:
 
 - endpoint-backed Home Assistant names, including bridged functional endpoints
 - existing Binding Cluster relationships, shown as direct or native-group routes
 - cached native Matter group membership where devices expose it
-- cached Group and Group Key capacity without exposing any key material
+- cached Group and Group Key capacity without exposing any key material.
 
-It does **not** create, remove, or change a Binding Cluster entry, native
-group, ACL, Group Key, device setting, automation, or scene.
+It can also create a **single-target native unicast** relationship after a
+reviewed plan and explicit confirmation. The transaction reads the current
+source Binding list and target ACL, adds only the needed target access entry,
+writes the Binding list, then reads the Binding Cluster back. If the binding
+cannot be verified, Studio reports that state rather than claiming success.
 
-The only live device request is a read of a source Binding Cluster attribute
-when that data is absent from the local Matter-server cache.
+This release does not yet create, modify, or remove native Matter Groups or
+Group Keys. Multi-target groupcast, relationship replacement, and removal are
+separate transactions because they affect more devices and require dedicated
+rollback/repair handling.
 
 ## HACS installation
 
@@ -60,6 +65,6 @@ Home Assistant connection and displays a not-connected notice.
 The product decisions and future write-transaction safety boundary are
 recorded in [the native binding Studio specification](docs/native-binding-studio-spec.md).
 
-Before write support is considered, validate the real snapshot against the
-target fabric: Home Assistant names, source/target roles, binding-table
-readback, native group membership, and advertised capacity must agree.
+Before a write, validate the proposed source and target against the live
+fabric. After the device readback confirms the Binding Cluster, test the
+physical control and retain the resulting relationship in the Studio view.
