@@ -9,6 +9,8 @@ PANEL_ICON = "mdi:transit-connection-variant"
 WS_TYPE_GET_SNAPSHOT = f"{DOMAIN}/get_snapshot"
 WS_TYPE_PREPARE_UNICAST = f"{DOMAIN}/prepare_unicast"
 WS_TYPE_APPLY_UNICAST = f"{DOMAIN}/apply_unicast"
+WS_TYPE_PREPARE_GROUPCAST = f"{DOMAIN}/prepare_groupcast"
+WS_TYPE_APPLY_GROUPCAST = f"{DOMAIN}/apply_groupcast"
 
 CLUSTER_ACCESS_CONTROL = 0x001F
 CLUSTER_BINDING = 0x001E
@@ -29,3 +31,10 @@ ATTR_MAX_GROUP_KEYS_PER_FABRIC = 3
 ATTR_MAX_GROUPS_PER_FABRIC = 2
 ATTR_CLIENT_LIST = 2
 ATTR_SERVER_LIST = 1
+
+# Matter's application Group ID range excludes 0 (all groups) and 0xFFF8+
+# (reserved).  Studio starts near the high end so it does not casually collide
+# with user-created groups, which are normally allocated from the low end.
+STUDIO_GROUP_ID_START = 0x8000
+STUDIO_GROUP_ID_END = 0xFFF7
+STUDIO_KEY_SET_ID_START = 0x0100

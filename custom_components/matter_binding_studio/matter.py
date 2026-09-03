@@ -18,6 +18,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
+from .group_store import get_managed_group_store
 from .const import (
     ATTR_BINDING,
     ATTR_CLIENT_LIST,
@@ -104,6 +105,8 @@ async def async_get_snapshot(hass: HomeAssistant) -> dict[str, Any]:
             if server_controls:
                 _add_cached_group_memberships(groups, raw_node, endpoint_id, endpoint)
 
+    await _merge_managed_group_metadata(hass, groups, endpoints)
+
     warnings: list[str] = []
     bindings_by_source: dict[tuple[int, int], list[dict[str, int | None]]] = {}
     for source_key, endpoint in endpoints.items():
@@ -144,6 +147,50 @@ async def async_get_snapshot(hass: HomeAssistant) -> dict[str, Any]:
         "capacities": capacities,
         "warnings": list(dict.fromkeys(warnings)),
     }
+
+
+async def _merge_managed_group_metadata(
+    hass: HomeAssistant,
+    groups: dict[int, dict[str, Any]],
+    endpoints: Mapping[tuple[int, int], dict[str, Any]],
+) -> None:
+    """Overlay Studio-owned names and pending repair records onto discovery.
+
+    A device's Groups table can take a moment to reach HA's cache after an
+    AddGroup command.  The private registry prevents a successfully reviewed
+    relationship from disappearing in that short window, while still using the
+    physical Groups table as the source of truth for ordinary native groups.
+    """
+    store = get_managed_group_store(hass)
+    await store.async_load()
+    for record in store.list_groups():
+        members = [
+            dict(endpoints.get((member["node_id"], member["endpoint_id"]), _unavailable_endpoint()))
+            for member in record.members
+        ]
+        group = groups.setdefault(
+            record.group_id,
+            {
+                "group_id": record.group_id,
+                "name": record.name,
+                "members": members,
+                "clusters": list(record.clusters),
+                "active_relationships": 0,
+                "managed_by_studio": True,
+                "status": record.status,
+            },
+        )
+        group["name"] = record.name
+        group["managed_by_studio"] = True
+        group["status"] = record.status
+        for member in members:
+            if not any(
+                existing["node_id"] == member["node_id"]
+                and existing["endpoint_id"] == member["endpoint_id"]
+                for existing in group["members"]
+            ):
+                group["members"].append(member)
+        group["clusters"] = sorted(set(group["clusters"]) | set(record.clusters))
 
 
 def _get_matter_client(hass: HomeAssistant) -> Any | None:

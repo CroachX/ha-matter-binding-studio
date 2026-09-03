@@ -38,6 +38,8 @@ type ControlSet = {
   members: Endpoint[];
   clusters: number[];
   active_relationships: number;
+  managed_by_studio?: boolean;
+  status?: "active" | "pending" | "repair_needed";
 };
 
 type Capacity = {
@@ -68,6 +70,27 @@ type UnicastPlan = {
   existing_binding_count: number;
   acl: "will_add" | "already_granted";
   steps: string[];
+};
+
+type GroupcastPlan = {
+  plan_id: string;
+  expires_in_seconds: number;
+  route: "native_group";
+  source: Endpoint;
+  targets: Endpoint[];
+  clusters: number[];
+  coverage: CapabilityCoverage[];
+  replaces_direct_binding: boolean;
+  steps: string[];
+};
+
+type BindingPlan = UnicastPlan | GroupcastPlan;
+
+type CapabilityCoverage = {
+  cluster_id: number;
+  supported_members: number;
+  total_members: number;
+  unsupported_members: string[];
 };
 
 type ApplyResult = {
@@ -149,7 +172,7 @@ export default function App({ hass }: { hass?: HomeAssistant }) {
         {initialLoading ? <p className="mbs-loading">{t.loading}</p> : null}
         {snapshot ? (
           <>
-            <UnicastComposer
+            <BindingComposer
               hass={hass}
               snapshot={snapshot}
               refresh={refresh}
@@ -163,7 +186,7 @@ export default function App({ hass }: { hass?: HomeAssistant }) {
   );
 }
 
-function UnicastComposer({
+function BindingComposer({
   hass,
   snapshot,
   refresh,
@@ -175,13 +198,14 @@ function UnicastComposer({
   t: Copy;
 }) {
   const [sourceKey, setSourceKey] = useState("");
-  const [targetKey, setTargetKey] = useState("");
+  const [targetKeys, setTargetKeys] = useState<string[]>([]);
   const [sameAreaOnly, setSameAreaOnly] = useState(true);
   const [clusters, setClusters] = useState<number[]>([]);
-  const [plan, setPlan] = useState<UnicastPlan | null>(null);
+  const [plan, setPlan] = useState<BindingPlan | null>(null);
   const [working, setWorking] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageIsError, setMessageIsError] = useState(false);
 
   const sources = snapshot.devices.filter((device) => device.can_bind);
   const source = sources.find((device) => endpointKey(device) === sourceKey);
@@ -191,45 +215,38 @@ function UnicastComposer({
   const targets = sameAreaOnly && source?.area_name
     ? availableTargets.filter((device) => device.area_name === source.area_name)
     : availableTargets;
-  const target = targets.find((device) => endpointKey(device) === targetKey);
-  const compatibleClusters = source && target
-    ? compatibleClustersFor(source, target)
-    : [];
+  const selectedTargets = targets.filter((device) => targetKeys.includes(endpointKey(device)));
+  const compatibleClusters = compatibleClustersForTargets(source, selectedTargets);
+  const coverage = capabilityCoverage(source, selectedTargets, compatibleClusters);
+  const route = selectedTargets.length > 1 ? "native_group" : "direct";
 
   const chooseSource = (value: string) => {
     const nextSource = sources.find((device) => endpointKey(device) === value);
-    const selectedTarget = availableTargets.find(
-      (device) => endpointKey(device) === targetKey,
-    );
+    const selected = availableTargets.filter((device) => targetKeys.includes(endpointKey(device)));
     setSourceKey(value);
-    const keepsTarget = !(
-      targetKey === value
-      || (sameAreaOnly && !sameArea(nextSource, selectedTarget))
+    const nextTargets = selected.filter((target) =>
+      endpointKey(target) !== value && (!sameAreaOnly || sameArea(nextSource, target)),
     );
-    if (!keepsTarget) {
-      setTargetKey("");
-    }
-    setClusters(keepsTarget ? compatibleClustersFor(nextSource, selectedTarget) : []);
+    setTargetKeys(nextTargets.map(endpointKey));
+    setClusters(compatibleClustersForTargets(nextSource, nextTargets));
     setPlan(null);
     setMessage(null);
   };
-  const chooseTarget = (value: string) => {
-    const nextTarget = targets.find((device) => endpointKey(device) === value);
-    setTargetKey(value);
-    setClusters(compatibleClustersFor(source, nextTarget));
+  const chooseTargets = (values: string[]) => {
+    const nextTargets = targets.filter((device) => values.includes(endpointKey(device)));
+    setTargetKeys(nextTargets.map(endpointKey));
+    setClusters(compatibleClustersForTargets(source, nextTargets));
     setPlan(null);
     setMessage(null);
   };
   const chooseSameAreaOnly = (checked: boolean) => {
     setSameAreaOnly(checked);
-    const selectedTarget = availableTargets.find(
-      (device) => endpointKey(device) === targetKey,
-    );
-    if (checked && !sameArea(source, selectedTarget)) {
-      setTargetKey("");
-      setClusters([]);
-      setPlan(null);
-    }
+    const nextTargets = checked
+      ? selectedTargets.filter((target) => sameArea(source, target))
+      : selectedTargets;
+    setTargetKeys(nextTargets.map(endpointKey));
+    setClusters(compatibleClustersForTargets(source, nextTargets));
+    setPlan(null);
   };
   const toggleCluster = (cluster: number) => {
     setPlan(null);
@@ -241,22 +258,34 @@ function UnicastComposer({
   };
 
   const prepare = async () => {
-    if (!hass || !source || !target || !clusters.length) return;
+    if (!hass || !source || !selectedTargets.length || !clusters.length) return;
     setWorking(true);
     setMessage(null);
     try {
-      const nextPlan = await hass.callWS<UnicastPlan>({
-        type: "matter_binding_studio/prepare_unicast",
-        source_node_id: source.node_id,
-        source_endpoint_id: source.endpoint_id,
-        target_node_id: target.node_id,
-        target_endpoint_id: target.endpoint_id,
-        clusters,
-      });
+      const nextPlan = selectedTargets.length === 1
+        ? await hass.callWS<UnicastPlan>({
+            type: "matter_binding_studio/prepare_unicast",
+            source_node_id: source.node_id,
+            source_endpoint_id: source.endpoint_id,
+            target_node_id: selectedTargets[0].node_id,
+            target_endpoint_id: selectedTargets[0].endpoint_id,
+            clusters,
+          })
+        : await hass.callWS<GroupcastPlan>({
+            type: "matter_binding_studio/prepare_groupcast",
+            source_node_id: source.node_id,
+            source_endpoint_id: source.endpoint_id,
+            targets: selectedTargets.map((target) => ({
+              node_id: target.node_id,
+              endpoint_id: target.endpoint_id,
+            })),
+            clusters,
+          });
       setConfirmed(false);
       setPlan(nextPlan);
     } catch (error) {
       setMessage(errorMessage(error));
+      setMessageIsError(true);
     } finally {
       setWorking(false);
     }
@@ -268,16 +297,20 @@ function UnicastComposer({
     setMessage(null);
     try {
       const result = await hass.callWS<ApplyResult>({
-        type: "matter_binding_studio/apply_unicast",
+        type: plan.route === "direct"
+          ? "matter_binding_studio/apply_unicast"
+          : "matter_binding_studio/apply_groupcast",
         plan_id: plan.plan_id,
         confirm: true,
       });
       setMessage(result.message);
+      setMessageIsError(!result.success || !result.verified);
       if (result.success && result.verified) {
         await refresh();
       }
     } catch (error) {
       setMessage(errorMessage(error));
+      setMessageIsError(true);
     } finally {
       // A reviewed plan is single-use, even when its write needs repair.
       setPlan(null);
@@ -290,7 +323,7 @@ function UnicastComposer({
     <section className="mbs-composer">
       <div className="mbs-section-title">
         <h2>{t.addRelationship}</h2>
-        <span>{t.direct}</span>
+        <span>{route === "native_group" ? t.nativeGroup : t.direct}</span>
       </div>
       <p className="mbs-description">{t.addRelationshipDescription}</p>
       <div className="mbs-form-grid">
@@ -305,17 +338,26 @@ function UnicastComposer({
             ))}
           </select>
         </label>
-        <label>
-          <span>{t.target}</span>
-          <select value={targetKey} onChange={(event) => chooseTarget(event.target.value)}>
-            <option value="" disabled>{t.chooseTarget}</option>
-            {targets.map((device) => (
-              <option key={endpointKey(device)} value={endpointKey(device)}>
-                {endpointLabel(device)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <fieldset className="mbs-target-picker">
+          <legend>{t.targets}</legend>
+          {targets.length ? targets.map((device) => {
+            const key = endpointKey(device);
+            return (
+              <label key={key}>
+                <input
+                  type="checkbox"
+                  checked={targetKeys.includes(key)}
+                  onChange={(event) => chooseTargets(
+                    event.target.checked
+                      ? [...targetKeys, key]
+                      : targetKeys.filter((candidate) => candidate !== key),
+                  )}
+                />
+                <span>{endpointLabel(device)}</span>
+              </label>
+            );
+          }) : <p className="mbs-meta">{t.noTargets}</p>}
+        </fieldset>
         <label className="mbs-area-filter">
           <input
             type="checkbox"
@@ -325,7 +367,7 @@ function UnicastComposer({
           <span>{t.sameAreaOnly}</span>
         </label>
       </div>
-      {source && target ? (
+      {source && selectedTargets.length ? (
         <fieldset className="mbs-capability-picker">
           <legend>{t.capabilities}</legend>
           {compatibleClusters.length ? compatibleClusters.map((cluster) => (
@@ -335,7 +377,10 @@ function UnicastComposer({
                 checked={clusters.includes(cluster)}
                 onChange={() => toggleCluster(cluster)}
               />
-              {clusterName(cluster, t)}
+              <span>{clusterName(cluster, t)}</span>
+              <small className={coverageFor(coverage, cluster)?.supported_members === selectedTargets.length ? "" : "mbs-partial"}>
+                {coverageLabel(coverageFor(coverage, cluster), t)}
+              </small>
             </label>
           )) : <p className="mbs-warning">{t.noSharedCapabilities}</p>}
         </fieldset>
@@ -344,7 +389,7 @@ function UnicastComposer({
         <button
           type="button"
           onClick={() => void prepare()}
-          disabled={!source || !target || !clusters.length || working}
+          disabled={!source || !selectedTargets.length || !clusters.length || working}
         >
           {working ? t.working : t.reviewPlan}
         </button>
@@ -352,13 +397,26 @@ function UnicastComposer({
       {plan ? (
         <div className="mbs-review">
           <strong>{t.reviewTitle}</strong>
-          <p>{endpointLabel(plan.source)} → {endpointLabel(plan.target)}</p>
+          <p>
+            {endpointLabel(plan.source)} → {plan.route === "direct"
+              ? endpointLabel(plan.target)
+              : `${plan.targets.length} ${t.members}`}
+          </p>
           <CapabilityList clusters={plan.clusters} t={t} />
+          {plan.route === "native_group" ? (
+            <>
+              <MemberList members={plan.targets} />
+              <PlanCoverage coverage={plan.coverage} t={t} />
+              {plan.replaces_direct_binding ? <p className="mbs-meta">{t.replacesDirect}</p> : null}
+            </>
+          ) : null}
           <ul>
             {plan.steps.map((step) => <li key={step}>{step}</li>)}
           </ul>
           <p className="mbs-meta">
-            {plan.acl === "will_add" ? t.aclWillAdd : t.aclAlreadyGranted}
+            {plan.route === "direct"
+              ? (plan.acl === "will_add" ? t.aclWillAdd : t.aclAlreadyGranted)
+              : t.groupAclReview}
           </p>
           <label className="mbs-confirm">
             <input
@@ -373,7 +431,7 @@ function UnicastComposer({
           </button>
         </div>
       ) : null}
-      {message ? <p className="mbs-warning">{message}</p> : null}
+      {message ? <p className={messageIsError ? "mbs-warning" : "mbs-success"}>{message}</p> : null}
     </section>
   );
 }
@@ -414,11 +472,40 @@ function sameArea(source?: Endpoint, target?: Endpoint): boolean {
   return Boolean(source?.area_name && target?.area_name && source.area_name === target.area_name);
 }
 
-function compatibleClustersFor(source?: Endpoint, target?: Endpoint): number[] {
-  if (!source || !target) return [];
+function compatibleClustersForTargets(source?: Endpoint, targets: Endpoint[] = []): number[] {
+  if (!source || !targets.length) return [];
   return source.client_capabilities.filter((cluster) =>
-    target.server_capabilities.includes(cluster),
+    targets.some((target) => target.server_capabilities.includes(cluster)),
   );
+}
+
+function capabilityCoverage(
+  source: Endpoint | undefined,
+  targets: Endpoint[],
+  clusters: number[],
+): CapabilityCoverage[] {
+  if (!source) return [];
+  return clusters.map((cluster_id) => {
+    const supported = targets.filter((target) => target.server_capabilities.includes(cluster_id));
+    return {
+      cluster_id,
+      supported_members: supported.length,
+      total_members: targets.length,
+      unsupported_members: targets
+        .filter((target) => !supported.includes(target))
+        .map(endpointLabel),
+    };
+  });
+}
+
+function coverageFor(coverage: CapabilityCoverage[], cluster: number): CapabilityCoverage | undefined {
+  return coverage.find((item) => item.cluster_id === cluster);
+}
+
+function coverageLabel(coverage: CapabilityCoverage | undefined, t: Copy): string {
+  if (!coverage) return "";
+  const status = coverage.supported_members === coverage.total_members ? t.coverageReady : t.coveragePartial;
+  return `${coverage.supported_members} / ${coverage.total_members} ${status}`;
 }
 
 function sameLabel(left: string, right: string): boolean {
@@ -481,6 +568,12 @@ function StudioData({ snapshot, t }: { snapshot: StudioSnapshot; t: Copy }) {
                 <p className="mbs-meta">
                   {controlSet.members.length} {t.members} · {controlSet.active_relationships} {t.activeRelationships}
                 </p>
+                {controlSet.status === "pending" ? (
+                  <p className="mbs-warning">{t.controlSetPending}</p>
+                ) : null}
+                {controlSet.status === "repair_needed" ? (
+                  <p className="mbs-warning">{t.controlSetRepairNeeded}</p>
+                ) : null}
                 <MemberList members={controlSet.members} />
               </article>
             ))}
@@ -573,6 +666,22 @@ function CapabilityList({ clusters, t }: { clusters: number[]; t: Copy }) {
     <div className="mbs-chips">
       {clusters.map((cluster) => (
         <span key={cluster}>{clusterName(cluster, t)}</span>
+      ))}
+    </div>
+  ) : null;
+}
+
+function PlanCoverage({ coverage, t }: { coverage: CapabilityCoverage[]; t: Copy }) {
+  return coverage.length ? (
+    <div className="mbs-coverage-list">
+      {coverage.map((item) => (
+        <p key={item.cluster_id} className={item.supported_members === item.total_members ? "mbs-meta" : "mbs-partial"}>
+          <strong>{clusterName(item.cluster_id, t)}</strong>
+          {" · "}{coverageLabel(item, t)}
+          {item.unsupported_members.length
+            ? ` · ${t.notSupportedBy}: ${item.unsupported_members.join(", ")}`
+            : ""}
+        </p>
       ))}
     </div>
   ) : null;

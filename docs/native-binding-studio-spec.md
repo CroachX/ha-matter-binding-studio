@@ -1,9 +1,10 @@
 # Native Matter Binding Studio — Specification
 
-Status: approved product direction. HACS `0.2.0` implements guarded,
-single-target native unicast creation with Binding Cluster readback. The
-remaining multi-target groupcast and removal transactions require their own
-implementation and verification before release.
+Status: approved product direction. HACS `0.3.0` implements guarded,
+single-target native unicast and reviewed automatic multi-target groupcast
+creation with Binding/GroupTable readback. Removal, editing, and repair actions
+remain intentionally deferred. Each newly supported device combination still
+needs a physical-control test after readback before it is treated as proven.
 
 ## Confirmed direction
 

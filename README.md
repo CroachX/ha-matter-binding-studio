@@ -7,25 +7,33 @@ This is an independent custom integration. It does not replace or modify
 `ha-matter-binding-helper`, MatterLogicHub, Home Assistant dashboards, or
 family-facing controls.
 
-## Current scope: verified direct bindings
+## Current scope: reviewed native bindings and automatic groups
 
-Version `0.2.0` reads the existing Matter fabric and presents:
+Version `0.3.0` reads the existing Matter fabric and presents:
 
 - endpoint-backed Home Assistant names, including bridged functional endpoints
 - existing Binding Cluster relationships, shown as direct or native-group routes
 - cached native Matter group membership where devices expose it
 - cached Group and Group Key capacity without exposing any key material.
 
-It can also create a **single-target native unicast** relationship after a
-reviewed plan and explicit confirmation. The transaction reads the current
-source Binding list and target ACL, adds only the needed target access entry,
-writes the Binding list, then reads the Binding Cluster back. If the binding
-cannot be verified, Studio reports that state rather than claiming success.
+It can create a **single-target native unicast** relationship after a reviewed
+plan and explicit confirmation. The transaction reads the current source
+Binding list and target ACL, adds only the needed target access entry, writes
+the Binding list, then reads the Binding Cluster back. If the binding cannot
+be verified, Studio reports that state rather than claiming success.
 
-This release does not yet create, modify, or remove native Matter Groups or
-Group Keys. Multi-target groupcast, relationship replacement, and removal are
-separate transactions because they affect more devices and require dedicated
-rollback/repair handling.
+When two or more targets are selected, Studio chooses groupcast automatically.
+It allocates a dedicated application Group ID and Group Key set, provisions the
+key material on the source and member nodes, adds each target endpoint to the
+native group, writes the least-privilege group ACLs, converts matching direct
+bindings only after provisioning succeeds, then reads the group table and
+source Binding Cluster back. The epoch key remains in Home Assistant's private
+local storage and is never sent to the panel.
+
+This is still a device-dependent Matter operation: the first real deployment
+must be physically tested after the readback. If provisioning stops part-way,
+the Studio records the group as needing repair instead of presenting it as
+ready. Editing, removing, and repair actions are intentionally not exposed yet.
 
 ## HACS installation
 
@@ -58,7 +66,8 @@ This allows HACS to install a ready-to-run integration without requiring a
 Node.js build environment on Home Assistant.
 
 For a standalone visual preview, run `npm run dev`. It intentionally has no
-Home Assistant connection and displays a not-connected notice.
+Home Assistant connection; it uses mock data to exercise the multi-target
+groupcast review flow without changing any Matter device.
 
 ## Design
 
