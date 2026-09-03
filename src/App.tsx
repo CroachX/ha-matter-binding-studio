@@ -10,6 +10,7 @@ export interface HomeAssistant {
 type Endpoint = {
   node_id: number | null;
   endpoint_id: number | null;
+  node_name: string;
   name: string;
   area_name: string | null;
   capabilities: number[];
@@ -175,6 +176,7 @@ function UnicastComposer({
 }) {
   const [sourceKey, setSourceKey] = useState("");
   const [targetKey, setTargetKey] = useState("");
+  const [sameAreaOnly, setSameAreaOnly] = useState(true);
   const [clusters, setClusters] = useState<number[]>([]);
   const [plan, setPlan] = useState<UnicastPlan | null>(null);
   const [working, setWorking] = useState(false);
@@ -182,18 +184,30 @@ function UnicastComposer({
   const [message, setMessage] = useState<string | null>(null);
 
   const sources = snapshot.devices.filter((device) => device.can_bind);
-  const targets = snapshot.devices.filter(
+  const source = sources.find((device) => endpointKey(device) === sourceKey);
+  const availableTargets = snapshot.devices.filter(
     (device) => device.can_be_target && endpointKey(device) !== sourceKey,
   );
-  const source = sources.find((device) => endpointKey(device) === sourceKey);
+  const targets = sameAreaOnly && source?.area_name
+    ? availableTargets.filter((device) => device.area_name === source.area_name)
+    : availableTargets;
   const target = targets.find((device) => endpointKey(device) === targetKey);
   const compatibleClusters = source && target
     ? source.client_capabilities.filter((cluster) => target.server_capabilities.includes(cluster))
     : [];
 
   const chooseSource = (value: string) => {
+    const nextSource = sources.find((device) => endpointKey(device) === value);
+    const selectedTarget = availableTargets.find(
+      (device) => endpointKey(device) === targetKey,
+    );
     setSourceKey(value);
-    if (targetKey === value) setTargetKey("");
+    if (
+      targetKey === value
+      || (sameAreaOnly && !sameArea(nextSource, selectedTarget))
+    ) {
+      setTargetKey("");
+    }
     setClusters([]);
     setPlan(null);
     setMessage(null);
@@ -203,6 +217,17 @@ function UnicastComposer({
     setClusters([]);
     setPlan(null);
     setMessage(null);
+  };
+  const chooseSameAreaOnly = (checked: boolean) => {
+    setSameAreaOnly(checked);
+    const selectedTarget = availableTargets.find(
+      (device) => endpointKey(device) === targetKey,
+    );
+    if (checked && !sameArea(source, selectedTarget)) {
+      setTargetKey("");
+      setClusters([]);
+      setPlan(null);
+    }
   };
   const toggleCluster = (cluster: number) => {
     setPlan(null);
@@ -289,6 +314,14 @@ function UnicastComposer({
             ))}
           </select>
         </label>
+        <label className="mbs-area-filter">
+          <input
+            type="checkbox"
+            checked={sameAreaOnly}
+            onChange={(event) => chooseSameAreaOnly(event.target.checked)}
+          />
+          <span>{t.sameAreaOnly}</span>
+        </label>
       </div>
       {source && target ? (
         <fieldset className="mbs-capability-picker">
@@ -348,10 +381,40 @@ function endpointKey(endpoint: Endpoint): string {
 }
 
 function endpointLabel(endpoint: Endpoint): string {
-  if (!endpoint.area_name || endpoint.name.includes(endpoint.area_name)) {
-    return endpoint.name;
+  const area = endpoint.area_name?.trim() || "";
+  const name = endpoint.name.trim();
+  const deviceLayer = endpointDeviceLayer(endpoint);
+  const prefix = area && !name.includes(area) ? `${area} - ` : "";
+  return deviceLayer ? `${prefix}${deviceLayer} · ${name}` : `${prefix}${name}`;
+}
+
+function endpointDeviceLayer(endpoint: Endpoint): string | null {
+  let nodeName = endpoint.node_name?.trim() || "";
+  const area = endpoint.area_name?.trim() || "";
+  if (area) {
+    const areaPrefix = new RegExp(`^${escapeRegExp(area)}\\s*[-–—]\\s*`);
+    nodeName = nodeName.replace(areaPrefix, "").trim();
   }
-  return `${endpoint.area_name} - ${endpoint.name}`;
+  if (!nodeName || sameLabel(nodeName, endpoint.name) || sameLabel(nodeName, area)) {
+    return null;
+  }
+  return nodeName;
+}
+
+function sameArea(source?: Endpoint, target?: Endpoint): boolean {
+  return Boolean(source?.area_name && target?.area_name && source.area_name === target.area_name);
+}
+
+function sameLabel(left: string, right: string): boolean {
+  return normaliseLabel(left) === normaliseLabel(right);
+}
+
+function normaliseLabel(value: string): string {
+  return value.toLocaleLowerCase().replace(/[\s\-–—]/g, "");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function errorMessage(error: unknown): string {
@@ -442,7 +505,7 @@ function RelationshipRow({
   const targetName =
     relationship.route === "native_group"
       ? relationship.targets.name
-      : members[0]?.name ?? relationship.targets.name;
+      : members[0] ? endpointLabel(members[0]) : relationship.targets.name;
   return (
     <article className="mbs-card">
       <div className="mbs-card-topline">
@@ -471,8 +534,7 @@ function RelationshipRow({
 function EndpointName({ endpoint }: { endpoint: Endpoint }) {
   return (
     <div>
-      <strong>{endpoint.name}</strong>
-      {endpoint.area_name ? <p className="mbs-meta">{endpoint.area_name}</p> : null}
+      <strong>{endpointLabel(endpoint)}</strong>
     </div>
   );
 }
@@ -491,7 +553,7 @@ function MemberList({ members }: { members: Endpoint[] }) {
   return members.length ? (
     <div className="mbs-members">
       {members.map((member) => (
-        <span key={`${member.node_id}-${member.endpoint_id}`}>{member.name}</span>
+        <span key={`${member.node_id}-${member.endpoint_id}`}>{endpointLabel(member)}</span>
       ))}
     </div>
   ) : null;

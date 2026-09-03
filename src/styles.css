@@ -93,6 +93,23 @@
   font-weight: 650;
 }
 
+.mbs-form-grid .mbs-area-filter {
+  display: inline-flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.mbs-area-filter input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--primary-color, #006a6a);
+}
+
 .mbs-form-grid select {
   width: 100%;
   min-height: 40px;
