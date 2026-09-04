@@ -199,7 +199,9 @@ function BindingComposer({
 }) {
   const [sourceKey, setSourceKey] = useState("");
   const [targetKeys, setTargetKeys] = useState<string[]>([]);
-  const [sameAreaOnly, setSameAreaOnly] = useState(true);
+  // Before an operator chooses a source, every eligible target should remain
+  // visible. Choosing a source starts with the helpful same-area filter on.
+  const [sameAreaOnly, setSameAreaOnly] = useState(false);
   const [clusters, setClusters] = useState<number[]>([]);
   const [plan, setPlan] = useState<BindingPlan | null>(null);
   const [working, setWorking] = useState(false);
@@ -209,9 +211,9 @@ function BindingComposer({
 
   const sources = snapshot.devices.filter((device) => device.can_bind);
   const source = sources.find((device) => endpointKey(device) === sourceKey);
-  const availableTargets = snapshot.devices.filter(
-    (device) => device.can_be_target && endpointKey(device) !== sourceKey,
-  );
+  const availableTargets = snapshot.devices
+    .filter((device) => device.can_be_target && endpointKey(device) !== sourceKey)
+    .sort(compareEndpoints);
   const targets = sameAreaOnly && source?.area_name
     ? availableTargets.filter((device) => device.area_name === source.area_name)
     : availableTargets;
@@ -223,9 +225,11 @@ function BindingComposer({
   const chooseSource = (value: string) => {
     const nextSource = sources.find((device) => endpointKey(device) === value);
     const selected = availableTargets.filter((device) => targetKeys.includes(endpointKey(device)));
+    const nextSameAreaOnly = Boolean(nextSource?.area_name);
     setSourceKey(value);
+    setSameAreaOnly(nextSameAreaOnly);
     const nextTargets = selected.filter((target) =>
-      endpointKey(target) !== value && (!sameAreaOnly || sameArea(nextSource, target)),
+      endpointKey(target) !== value && (!nextSameAreaOnly || sameArea(nextSource, target)),
     );
     setTargetKeys(nextTargets.map(endpointKey));
     setClusters(compatibleClustersForTargets(nextSource, nextTargets));
@@ -438,6 +442,21 @@ function BindingComposer({
 
 function endpointKey(endpoint: Endpoint): string {
   return `${endpoint.node_id}:${endpoint.endpoint_id}`;
+}
+
+const endpointCollator = new Intl.Collator("zh-Hant", {
+  numeric: true,
+  sensitivity: "base",
+});
+
+function compareEndpoints(left: Endpoint, right: Endpoint): number {
+  return (
+    endpointCollator.compare(left.area_name ?? "", right.area_name ?? "") ||
+    endpointCollator.compare(left.node_name ?? "", right.node_name ?? "") ||
+    endpointCollator.compare(left.name, right.name) ||
+    (left.node_id ?? Number.MAX_SAFE_INTEGER) - (right.node_id ?? Number.MAX_SAFE_INTEGER) ||
+    (left.endpoint_id ?? Number.MAX_SAFE_INTEGER) - (right.endpoint_id ?? Number.MAX_SAFE_INTEGER)
+  );
 }
 
 function endpointLabel(endpoint: Endpoint): string {
