@@ -18,8 +18,8 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from .const import (
-    ATTR_ACL,
     ATTR_ACCESS_CONTROL_ENTRIES_PER_FABRIC,
+    ATTR_ACL,
     ATTR_BINDING,
     ATTR_CURRENT_FABRIC_INDEX,
     ATTR_GROUP_KEY_MAP,
@@ -28,7 +28,6 @@ from .const import (
     CLUSTER_ACCESS_CONTROL,
     CLUSTER_BINDING,
     CLUSTER_GROUP_KEY_MANAGEMENT,
-    CLUSTER_GROUPS,
     CLUSTER_OPERATIONAL_CREDENTIALS,
     DOMAIN,
     STUDIO_GROUP_ID_END,
@@ -2507,9 +2506,7 @@ def _acl_target_chunks(
     normalized = sorted({int(cluster) for cluster in clusters})
     if not normalized:
         return []
-    limit = capacity.get("targets_per_entry") or 1
-    if limit < 1:
-        limit = 1
+    limit = max(capacity.get("targets_per_entry") or 1, 1)
     return [normalized[index : index + limit] for index in range(0, len(normalized), limit)]
 
 
