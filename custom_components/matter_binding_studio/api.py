@@ -15,6 +15,8 @@ from .const import (
     WS_TYPE_APPLY_UNICAST,
     WS_TYPE_GET_SNAPSHOT,
     WS_TYPE_GET_ACL_OVERVIEW,
+    WS_TYPE_PREPARE_REMOVE_ACL,
+    WS_TYPE_APPLY_REMOVE_ACL,
     WS_TYPE_PREPARE_GROUPCAST,
     WS_TYPE_PREPARE_REMOVE_BINDING,
     WS_TYPE_PREPARE_UNICAST,
@@ -23,6 +25,8 @@ from .matter import async_get_snapshot
 from .writer import (
     StudioWriteError,
     async_get_acl_overview,
+    async_prepare_remove_acl,
+    async_apply_remove_acl,
     async_apply_groupcast,
     async_apply_remove_binding,
     async_apply_unicast,
@@ -39,6 +43,8 @@ async def async_setup(hass: HomeAssistant) -> None:
         return
     websocket_api.async_register_command(hass, ws_get_snapshot)
     websocket_api.async_register_command(hass, ws_get_acl_overview)
+    websocket_api.async_register_command(hass, ws_prepare_remove_acl)
+    websocket_api.async_register_command(hass, ws_apply_remove_acl)
     websocket_api.async_register_command(hass, ws_prepare_unicast)
     websocket_api.async_register_command(hass, ws_apply_unicast)
     websocket_api.async_register_command(hass, ws_prepare_groupcast)
@@ -88,6 +94,62 @@ async def ws_get_acl_overview(
         connection.send_error(msg["id"], "acl_read_failed", str(err))
         return
     connection.send_result(msg["id"], overview)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_PREPARE_REMOVE_ACL,
+        vol.Required("target_node_id"): vol.Coerce(int),
+        vol.Required("target_endpoint_id"): vol.Coerce(int),
+        vol.Required("entry_index"): vol.Coerce(int),
+    }
+)
+@websocket_api.async_response
+async def ws_prepare_remove_acl(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Create a reviewed plan for reclaiming one unused ACL entry."""
+    if not _is_admin(connection):
+        connection.send_error(msg["id"], "forbidden", "Matter Binding Studio is admin-only.")
+        return
+    try:
+        plan = await async_prepare_remove_acl(
+            hass,
+            target_node_id=msg["target_node_id"],
+            target_endpoint_id=msg["target_endpoint_id"],
+            entry_index=msg["entry_index"],
+        )
+    except StudioWriteError as err:
+        connection.send_error(msg["id"], "plan_failed", str(err))
+        return
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_APPLY_REMOVE_ACL,
+        vol.Required("plan_id"): str,
+        vol.Required("confirm"): True,
+    }
+)
+@websocket_api.async_response
+async def ws_apply_remove_acl(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Apply one reviewed ACL reclaim plan and verify the full table."""
+    if not _is_admin(connection):
+        connection.send_error(msg["id"], "forbidden", "Matter Binding Studio is admin-only.")
+        return
+    try:
+        result = await async_apply_remove_acl(hass, plan_id=msg["plan_id"])
+    except StudioWriteError as err:
+        connection.send_error(msg["id"], "write_failed", str(err))
+        return
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command(

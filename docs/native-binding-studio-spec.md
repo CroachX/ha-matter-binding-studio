@@ -328,6 +328,13 @@ number of least-privilege ACL entries allowed by the reported
 `TargetsPerAccessControlEntry` limit. If that limit is unavailable, Studio
 keeps one target per entry rather than assuming an unsupported table shape.
 
+An ACL entry is eligible for reclaim only when it is not an administrator rule,
+has concrete subjects and targets, and cannot be matched to any currently read
+Binding relationship. Reclaiming is never implicit: the operator reviews the
+single entry, confirms it, and Studio re-reads the complete ACL table before
+reporting success. A changed ACL table, an administrator entry, and an
+in-use/ambiguous rule all fail closed.
+
 ## 7. Safety rules
 
 - Discovery is read-only.

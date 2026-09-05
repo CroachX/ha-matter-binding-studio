@@ -109,6 +109,112 @@ async def async_get_acl_overview(
     }
 
 
+async def async_prepare_remove_acl(
+    hass: HomeAssistant,
+    *,
+    target_node_id: int,
+    target_endpoint_id: int,
+    entry_index: int,
+) -> dict[str, Any]:
+    """Prepare a guarded reclaim of one explicitly unused ACL entry."""
+    snapshot = await async_get_snapshot(hass)
+    target = _find_endpoint(
+        snapshot.get("devices", []), target_node_id, target_endpoint_id
+    )
+    if target is None or not target.get("can_be_target"):
+        raise StudioWriteError("Choose a valid Matter output target.")
+    client = _require_client(hass)
+    entries = await _read_acl(client, target_node_id)
+    if entry_index < 0 or entry_index >= len(entries):
+        raise StudioWriteError("This ACL entry changed or no longer exists. Refresh first.")
+
+    entry = entries[entry_index]
+    public_entry = _public_acl_entry(
+        entry,
+        index=entry_index,
+        target_node_id=target_node_id,
+        endpoint_names={
+            int(endpoint["endpoint_id"]): _endpoint_presentation_name(endpoint)
+            for endpoint in snapshot.get("devices", [])
+            if endpoint.get("node_id") == target_node_id
+            and endpoint.get("endpoint_id") is not None
+        },
+        node_names=_node_name_index(snapshot.get("devices", [])),
+        group_names={
+            int(group["group_id"]): str(group.get("name") or "Native group")
+            for group in snapshot.get("native_control_sets", [])
+        },
+        relationships=snapshot.get("relationships", []),
+    )
+    if not public_entry["usage"]["safe_to_reclaim"]:
+        raise StudioWriteError(
+            "Only an unused, non-administrator ACL entry with concrete source and target rules can be reclaimed."
+        )
+
+    entries_after = [entry for index, entry in enumerate(entries) if index != entry_index]
+    plan_id = secrets.token_urlsafe(24)
+    _pending_plans(hass)[plan_id] = {
+        "kind": "remove_acl",
+        "plan_id": plan_id,
+        "created_at": time.monotonic(),
+        "target": target,
+        "target_node_id": target_node_id,
+        "target_endpoint_id": target_endpoint_id,
+        "acl_before": entries,
+        "acl_after": entries_after,
+        "entry": public_entry,
+    }
+    _purge_expired_plans(hass)
+    return {
+        "plan_id": plan_id,
+        "expires_in_seconds": _PLAN_TTL_SECONDS,
+        "target": target,
+        "entry": public_entry,
+        "capacity_before": _public_acl_capacity(
+            await _read_acl_capacity(client, target_node_id, entries)
+        ),
+        "steps": [
+            "Read the latest target ACL table.",
+            "Remove only the reviewed unused operate rule.",
+            "Keep every administrator and in-use ACL rule.",
+            "Write the remaining ACL table and read it back.",
+        ],
+    }
+
+
+async def async_apply_remove_acl(hass: HomeAssistant, *, plan_id: str) -> dict[str, Any]:
+    """Apply a reviewed ACL reclaim transaction and verify the whole table."""
+    plan = _take_plan(hass, plan_id, expected_kind="remove_acl")
+    target_node_id = int(plan["target_node_id"])
+    client = _require_client(hass)
+    current = await _read_acl(client, target_node_id)
+    if _acl_signature(current) != _acl_signature(plan["acl_before"]):
+        raise StudioWriteError(
+            "The target ACL changed after review. Refresh and review a new reclaim plan."
+        )
+    try:
+        await _write_acl(client, target_node_id, list(plan["acl_after"]))
+        for _ in range(_VERIFY_ATTEMPTS):
+            readback = await _read_acl(client, target_node_id)
+            if _acl_signature(readback) == _acl_signature(plan["acl_after"]):
+                return {
+                    "success": True,
+                    "verified": True,
+                    "message": "The unused target ACL rule was reclaimed and read back.",
+                    "target": plan["target"],
+                }
+            await asyncio.sleep(_VERIFY_DELAY_SECONDS)
+    except Exception as err:  # noqa: BLE001 - report uncertain configuration safely
+        _LOGGER.warning("Studio ACL reclaim could not be verified: %s", err)
+    return {
+        "success": False,
+        "verified": False,
+        "repair_needed": True,
+        "message": "The ACL reclaim could not be verified. Refresh before retrying or changing this target.",
+        "target": plan["target"],
+    }
+
+
 def _node_name_index(devices: list[Mapping[str, Any]]) -> dict[int, str]:
     result: dict[int, str] = {}
     for device in devices:
@@ -1783,6 +1889,45 @@ def _binding_signature(bindings: list[dict[str, int | None]]) -> list[tuple[Any,
         )
         for entry in bindings
     )
+
+
+def _acl_signature(entries: list[Mapping[str, Any]]) -> list[tuple[Any, ...]]:
+    """Compare ACL tables semantically while ignoring transport ordering."""
+    result: list[tuple[Any, ...]] = []
+    for entry in entries:
+        targets = entry.get("targets")
+        target_signature = None
+        if isinstance(targets, list):
+            target_rows = [
+                (
+                    _optional_int(target.get("endpoint")),
+                    _optional_int(target.get("cluster")),
+                    _optional_int(target.get("deviceType")),
+                )
+                for target in targets
+                if isinstance(target, Mapping)
+            ]
+            target_signature = tuple(
+                sorted(
+                    target_rows,
+                    key=lambda value: tuple(-1 if item is None else item for item in value),
+                )
+            )
+        subjects = entry.get("subjects")
+        subject_signature = (
+            tuple(sorted(int(subject) for subject in subjects))
+            if isinstance(subjects, list)
+            else None
+        )
+        result.append(
+            (
+                int(entry["privilege"]),
+                int(entry["authMode"]),
+                subject_signature,
+                target_signature,
+            )
+        )
+    return sorted(result, key=repr)
 
 
 def _normalise_acl_entry(entry: Any) -> dict[str, Any] | None:

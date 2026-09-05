@@ -14,6 +14,8 @@ WS_TYPE_APPLY_GROUPCAST = f"{DOMAIN}/apply_groupcast"
 WS_TYPE_PREPARE_REMOVE_BINDING = f"{DOMAIN}/prepare_remove_binding"
 WS_TYPE_APPLY_REMOVE_BINDING = f"{DOMAIN}/apply_remove_binding"
 WS_TYPE_GET_ACL_OVERVIEW = f"{DOMAIN}/get_acl_overview"
+WS_TYPE_PREPARE_REMOVE_ACL = f"{DOMAIN}/prepare_remove_acl"
+WS_TYPE_APPLY_REMOVE_ACL = f"{DOMAIN}/apply_remove_acl"
 
 CLUSTER_ACCESS_CONTROL = 0x001F
 CLUSTER_BINDING = 0x001E

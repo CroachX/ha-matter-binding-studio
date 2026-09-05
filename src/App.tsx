@@ -146,6 +146,15 @@ type AclOverview = {
   entries: AclEntry[];
 };
 
+type AclRemovalPlan = {
+  plan_id: string;
+  expires_in_seconds: number;
+  target: Endpoint;
+  entry: AclEntry;
+  capacity_before: AclCapacity;
+  steps: string[];
+};
+
 export default function App({ hass }: { hass?: HomeAssistant }) {
   const language = resolveLanguage(hass);
   const t = copy[language];
@@ -852,6 +861,10 @@ function AclInspector({
   const [overview, setOverview] = useState<AclOverview | null>(null);
   const [working, setWorking] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [removalPlan, setRemovalPlan] = useState<AclRemovalPlan | null>(null);
+  const [removalConfirmed, setRemovalConfirmed] = useState(false);
+  const [removalMessage, setRemovalMessage] = useState<string | null>(null);
+  const [removalFailed, setRemovalFailed] = useState(false);
   const selectedTarget = targets.find((target) => endpointKey(target) === targetKey);
 
   const readAcl = async () => {
@@ -872,6 +885,52 @@ function AclInspector({
     }
   };
 
+  const reviewRemoval = async (entry: AclEntry) => {
+    if (!hass || !selectedTarget || selectedTarget.node_id === null || selectedTarget.endpoint_id === null) return;
+    setWorking(true);
+    setRemovalMessage(null);
+    setRemovalFailed(false);
+    try {
+      setRemovalPlan(await hass.callWS<AclRemovalPlan>({
+        type: "matter_binding_studio/prepare_remove_acl",
+        target_node_id: selectedTarget.node_id,
+        target_endpoint_id: selectedTarget.endpoint_id,
+        entry_index: entry.entry_index,
+      }));
+      setRemovalConfirmed(false);
+    } catch (error) {
+      setRemovalMessage(errorMessage(error));
+      setRemovalFailed(true);
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const applyRemoval = async () => {
+    if (!hass || !removalPlan || !removalConfirmed) return;
+    setWorking(true);
+    setRemovalMessage(null);
+    try {
+      const result = await hass.callWS<ApplyResult>({
+        type: "matter_binding_studio/apply_remove_acl",
+        plan_id: removalPlan.plan_id,
+        confirm: true,
+      });
+      setRemovalMessage(result.message);
+      setRemovalFailed(!result.success || !result.verified);
+      if (result.success && result.verified) {
+        await readAcl();
+      }
+    } catch (error) {
+      setRemovalMessage(errorMessage(error));
+      setRemovalFailed(true);
+    } finally {
+      setRemovalPlan(null);
+      setRemovalConfirmed(false);
+      setWorking(false);
+    }
+  };
+
   return (
     <section>
       <SectionTitle title={t.acl} count={overview?.entries.length ?? 0} />
@@ -885,6 +944,8 @@ function AclInspector({
               setTargetKey(event.target.value);
               setOverview(null);
               setFailed(false);
+              setRemovalPlan(null);
+              setRemovalMessage(null);
             }}
           >
             <option value="" disabled>{t.chooseAclTarget}</option>
@@ -908,15 +969,70 @@ function AclInspector({
         <>
           <AclCapacitySummary capacity={overview.capacity} t={t} />
           <div className="mbs-list">
-            {overview.entries.map((entry) => <AclEntryRow entry={entry} key={entry.entry_index} t={t} />)}
+            {overview.entries.map((entry) => (
+              <AclEntryRow
+                entry={entry}
+                key={entry.entry_index}
+                t={t}
+                onReviewRemoval={reviewRemoval}
+                working={working}
+              />
+            ))}
           </div>
         </>
       ) : null}
+      {removalPlan ? (
+        <div className="mbs-review mbs-removal-review">
+          <strong>{t.aclRemovalReviewTitle}</strong>
+          <AclEntryRow entry={removalPlan.entry} t={t} />
+          <p className="mbs-meta">{t.aclRemovalKeepsInUse}</p>
+          <ul>{removalPlan.steps.map((step) => <li key={step}>{step}</li>)}</ul>
+          <label className="mbs-confirm">
+            <input
+              type="checkbox"
+              checked={removalConfirmed}
+              onChange={(event) => setRemovalConfirmed(event.target.checked)}
+            />
+            {t.confirmAclRemoval}
+          </label>
+          <div className="mbs-review-actions">
+            <button
+              type="button"
+              onClick={() => {
+                setRemovalPlan(null);
+                setRemovalConfirmed(false);
+              }}
+              disabled={working}
+            >
+              {t.cancel}
+            </button>
+            <button
+              type="button"
+              className="mbs-danger-button"
+              onClick={() => void applyRemoval()}
+              disabled={!removalConfirmed || working}
+            >
+              {working ? t.working : t.reclaimAcl}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {removalMessage ? <p className={removalFailed ? "mbs-warning" : "mbs-success"}>{removalMessage}</p> : null}
     </section>
   );
 }
 
-function AclEntryRow({ entry, t }: { entry: AclEntry; t: Copy }) {
+function AclEntryRow({
+  entry,
+  t,
+  onReviewRemoval,
+  working = false,
+}: {
+  entry: AclEntry;
+  t: Copy;
+  onReviewRemoval?: (entry: AclEntry) => void;
+  working?: boolean;
+}) {
   const kind = entry.kind === "administrator" ? t.aclAdministrator : t.aclOperate;
   const authMode = entry.auth_mode === "case"
     ? t.aclCase
@@ -949,6 +1065,18 @@ function AclEntryRow({ entry, t }: { entry: AclEntry; t: Copy }) {
       </div>
       {entry.usage.relationship_names.length ? (
         <p className="mbs-meta">{entry.usage.relationship_names.join("；")}</p>
+      ) : null}
+      {entry.usage.safe_to_reclaim && onReviewRemoval ? (
+        <div className="mbs-card-actions">
+          <button
+            type="button"
+            className="mbs-quiet-danger-button"
+            onClick={() => onReviewRemoval(entry)}
+            disabled={working}
+          >
+            {t.reviewAclReclaim}
+          </button>
+        </div>
       ) : null}
     </article>
   );

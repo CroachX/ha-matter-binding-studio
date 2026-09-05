@@ -151,7 +151,42 @@ const previewHass: HomeAssistant = {
               safe_to_reclaim: false,
             },
           },
+          {
+            entry_index: 2,
+            kind: "operate",
+            auth_mode: "case",
+            subjects: ["Retired controller"],
+            targets: [{ endpoint: "Study - Smart light", capability: "Color temperature" }],
+            usage: { state: "unused", relationship_names: [], safe_to_reclaim: true },
+          },
         ],
+      } as T;
+    }
+    if (message.type === "matter_binding_studio/prepare_remove_acl") {
+      return {
+        plan_id: "preview-acl-removal",
+        expires_in_seconds: 300,
+        target: previewSnapshot.devices[1],
+        entry: {
+          entry_index: 2,
+          kind: "operate",
+          auth_mode: "case",
+          subjects: ["Retired controller"],
+          targets: [{ endpoint: "Study - Smart light", capability: "Color temperature" }],
+          usage: { state: "unused", relationship_names: [], safe_to_reclaim: true },
+        },
+        capacity_before: { used: 3, maximum: 4, available: 1, targets_per_entry: 3 },
+        steps: [
+          "Preview only — no ACL will be changed.",
+          "The remaining ACL table would be read back after removal.",
+        ],
+      } as T;
+    }
+    if (message.type === "matter_binding_studio/apply_remove_acl") {
+      return {
+        success: true,
+        verified: true,
+        message: "Preview ACL reclaim completed. No Matter device was changed.",
       } as T;
     }
     const clusters = Array.isArray(message.clusters)

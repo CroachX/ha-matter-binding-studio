@@ -22,6 +22,11 @@ sources and endpoints, and whether a rule can be matched to a currently known
 native Binding. It deliberately does not query every target whenever the
 Fabric refreshes.
 
+An explicitly unused operate rule with concrete source and target fields can
+be reclaimed through its own review-and-confirm transaction. Studio never
+offers administrator rules or a rule matched to a current Binding for reclaim;
+the complete remaining ACL table is read back before success is reported.
+
 It can create a **single-target native unicast** relationship after a reviewed
 plan and explicit confirmation. The transaction reads the current source
 Binding list and target ACL, adds only the needed target access entry, writes
