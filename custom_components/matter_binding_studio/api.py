@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import voluptuous as vol
@@ -39,6 +40,8 @@ from .writer import (
     async_prepare_unicast,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 
 async def async_setup(hass: HomeAssistant) -> None:
     """Register Studio WebSocket commands once for this HA instance."""
@@ -58,6 +61,22 @@ async def async_setup(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_prepare_remove_binding)
     websocket_api.async_register_command(hass, ws_apply_remove_binding)
     domain_data["_ws_registered"] = True
+
+
+def _send_matter_operation_error(
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+    *,
+    operation: str,
+    err: Exception,
+) -> None:
+    """Avoid leaking a raw Matter stack trace into an operator-facing panel."""
+    _LOGGER.warning("Studio %s failed: %s", operation, err)
+    connection.send_error(
+        msg["id"],
+        "matter_operation_failed",
+        "The Matter device operation could not be completed. Confirm the device is online, then refresh and retry.",
+    )
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_TYPE_GET_SNAPSHOT})
@@ -99,6 +118,9 @@ async def ws_get_acl_overview(
     except StudioWriteError as err:
         connection.send_error(msg["id"], "acl_read_failed", str(err))
         return
+    except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
+        _send_matter_operation_error(connection, msg, operation="ACL read", err=err)
+        return
     connection.send_result(msg["id"], overview)
 
 
@@ -130,6 +152,9 @@ async def ws_prepare_remove_acl(
     except StudioWriteError as err:
         connection.send_error(msg["id"], "plan_failed", str(err))
         return
+    except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
+        _send_matter_operation_error(connection, msg, operation="ACL reclaim planning", err=err)
+        return
     connection.send_result(msg["id"], plan)
 
 
@@ -155,6 +180,9 @@ async def ws_apply_remove_acl(
     except StudioWriteError as err:
         connection.send_error(msg["id"], "write_failed", str(err))
         return
+    except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
+        _send_matter_operation_error(connection, msg, operation="ACL reclaim", err=err)
+        return
     connection.send_result(msg["id"], result)
 
 
@@ -178,6 +206,9 @@ async def ws_prepare_cleanup_group(
         plan = await async_prepare_cleanup_group(hass, group_id=msg["group_id"])
     except StudioWriteError as err:
         connection.send_error(msg["id"], "plan_failed", str(err))
+        return
+    except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
+        _send_matter_operation_error(connection, msg, operation="group cleanup planning", err=err)
         return
     connection.send_result(msg["id"], plan)
 
@@ -203,6 +234,9 @@ async def ws_apply_cleanup_group(
         result = await async_apply_cleanup_group(hass, plan_id=msg["plan_id"])
     except StudioWriteError as err:
         connection.send_error(msg["id"], "write_failed", str(err))
+        return
+    except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
+        _send_matter_operation_error(connection, msg, operation="group cleanup", err=err)
         return
     connection.send_result(msg["id"], result)
 
@@ -241,6 +275,9 @@ async def ws_prepare_unicast(
     except StudioWriteError as err:
         connection.send_error(msg["id"], "plan_failed", str(err))
         return
+    except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
+        _send_matter_operation_error(connection, msg, operation="Binding planning", err=err)
+        return
     connection.send_result(msg["id"], plan)
 
 
@@ -267,6 +304,9 @@ async def ws_apply_unicast(
         result = await async_apply_unicast(hass, plan_id=msg["plan_id"])
     except StudioWriteError as err:
         connection.send_error(msg["id"], "write_failed", str(err))
+        return
+    except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
+        _send_matter_operation_error(connection, msg, operation="Binding write", err=err)
         return
     connection.send_result(msg["id"], result)
 
@@ -311,6 +351,9 @@ async def ws_prepare_groupcast(
     except StudioWriteError as err:
         connection.send_error(msg["id"], "plan_failed", str(err))
         return
+    except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
+        _send_matter_operation_error(connection, msg, operation="group Binding planning", err=err)
+        return
     connection.send_result(msg["id"], plan)
 
 
@@ -337,6 +380,9 @@ async def ws_apply_groupcast(
         result = await async_apply_groupcast(hass, plan_id=msg["plan_id"])
     except StudioWriteError as err:
         connection.send_error(msg["id"], "write_failed", str(err))
+        return
+    except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
+        _send_matter_operation_error(connection, msg, operation="group Binding write", err=err)
         return
     connection.send_result(msg["id"], result)
 
@@ -377,6 +423,9 @@ async def ws_prepare_remove_binding(
     except StudioWriteError as err:
         connection.send_error(msg["id"], "plan_failed", str(err))
         return
+    except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
+        _send_matter_operation_error(connection, msg, operation="Binding removal planning", err=err)
+        return
     connection.send_result(msg["id"], plan)
 
 
@@ -403,6 +452,9 @@ async def ws_apply_remove_binding(
         result = await async_apply_remove_binding(hass, plan_id=msg["plan_id"])
     except StudioWriteError as err:
         connection.send_error(msg["id"], "write_failed", str(err))
+        return
+    except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
+        _send_matter_operation_error(connection, msg, operation="Binding removal", err=err)
         return
     connection.send_result(msg["id"], result)
 
