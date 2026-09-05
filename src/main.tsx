@@ -57,7 +57,43 @@ const previewSnapshot: StudioSnapshot = {
       can_be_target: true,
     },
   ],
-  relationships: [],
+  relationships: [
+    {
+      id: "1001-2-endpoint-1002-1",
+      source: {
+        node_id: 1001,
+        endpoint_id: 2,
+        node_name: "Study - Multi Function Switch",
+        name: "Smart light",
+        area_name: "Study",
+        capabilities: [6, 8, 768],
+        client_capabilities: [6, 8, 768],
+        server_capabilities: [6, 8, 768],
+        can_bind: true,
+        can_be_target: true,
+      },
+      targets: {
+        kind: "endpoint",
+        name: "Smart light",
+        members: [
+          {
+            node_id: 1002,
+            endpoint_id: 1,
+            node_name: "Study - Smart Light",
+            name: "Smart light",
+            area_name: "Study",
+            capabilities: [6, 8, 768],
+            client_capabilities: [],
+            server_capabilities: [6, 8, 768],
+            can_bind: false,
+            can_be_target: true,
+          },
+        ],
+      },
+      route: "direct",
+      clusters: [6, 8],
+    },
+  ],
   native_control_sets: [],
   capacities: [
     {
@@ -123,6 +159,29 @@ const previewHass: HomeAssistant = {
         })),
         replaces_direct_binding: false,
         steps: ["Preview only — no group, Group Key, ACL, or Binding will be changed."],
+      } as T;
+    }
+    if (message.type === "matter_binding_studio/prepare_remove_binding") {
+      return {
+        plan_id: "preview-removal",
+        expires_in_seconds: 300,
+        route: "direct",
+        source: previewSnapshot.devices[0],
+        clusters: [6, 8],
+        removed_entry_count: 2,
+        keeps_native_group: false,
+        steps: [
+          "Preview only — no Binding will be changed.",
+          "The source Binding Cluster would be read back after removal.",
+        ],
+      } as T;
+    }
+    if (message.type === "matter_binding_studio/apply_remove_binding") {
+      previewSnapshot.relationships = [];
+      return {
+        success: true,
+        verified: true,
+        message: "Preview removal completed. No Matter device was changed.",
       } as T;
     }
     return {

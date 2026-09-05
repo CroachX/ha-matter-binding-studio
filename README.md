@@ -33,7 +33,14 @@ local storage and is never sent to the panel.
 This is still a device-dependent Matter operation: the first real deployment
 must be physically tested after the readback. If provisioning stops part-way,
 the Studio records the group as needing repair instead of presenting it as
-ready. Editing, removing, and repair actions are intentionally not exposed yet.
+ready.
+
+Existing direct and groupcast relationships can be removed through a separate
+review-and-confirm transaction. Studio first re-reads the source Binding table,
+removes only the entries belonging to the selected relationship, writes the
+remaining table, then verifies the full table by readback. Removing a groupcast
+relationship leaves its native group, Group Key, membership, and ACLs intact;
+group cleanup and repair actions remain intentionally deferred.
 
 ## HACS installation
 

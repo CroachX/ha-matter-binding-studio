@@ -11,6 +11,8 @@ WS_TYPE_PREPARE_UNICAST = f"{DOMAIN}/prepare_unicast"
 WS_TYPE_APPLY_UNICAST = f"{DOMAIN}/apply_unicast"
 WS_TYPE_PREPARE_GROUPCAST = f"{DOMAIN}/prepare_groupcast"
 WS_TYPE_APPLY_GROUPCAST = f"{DOMAIN}/apply_groupcast"
+WS_TYPE_PREPARE_REMOVE_BINDING = f"{DOMAIN}/prepare_remove_binding"
+WS_TYPE_APPLY_REMOVE_BINDING = f"{DOMAIN}/apply_remove_binding"
 
 CLUSTER_ACCESS_CONTROL = 0x001F
 CLUSTER_BINDING = 0x001E

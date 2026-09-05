@@ -1,10 +1,12 @@
 # Native Matter Binding Studio — Specification
 
-Status: approved product direction. HACS `0.3.0` implements guarded,
-single-target native unicast and reviewed automatic multi-target groupcast
-creation with Binding/GroupTable readback. Removal, editing, and repair actions
-remain intentionally deferred. Each newly supported device combination still
-needs a physical-control test after readback before it is treated as proven.
+Status: approved product direction. The current implementation provides
+guarded single-target native unicast and reviewed automatic multi-target
+groupcast creation with Binding/GroupTable readback, plus reviewed Binding
+removal with source-table readback. Editing, native-group cleanup, and repair
+actions remain intentionally deferred. Each newly supported device combination
+still needs a physical-control test after readback before it is treated as
+proven.
 
 ## Confirmed direction
 
@@ -329,6 +331,10 @@ Diagnostics remain available but never drive the normal authoring flow:
   operational group binding.
 - Groupcast read-back verifies configuration, not a per-member acknowledgement
   of a later multicast command.
+- Removing a relationship re-reads the complete source Binding table, removes
+  only the cluster entries belonging to the reviewed target, writes the
+  remaining table, and verifies that complete table by readback. It does not
+  remove target ACLs or clean up native-group state.
 - The Studio never creates a hidden virtual device to stand in for a group.
 
 ## 8. Existing backend to retain

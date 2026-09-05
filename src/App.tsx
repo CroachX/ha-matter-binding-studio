@@ -27,6 +27,7 @@ type Relationship = {
     kind: "endpoint" | "group";
     name: string;
     members: Endpoint[];
+    group_id?: number;
   };
   route: "direct" | "native_group";
   clusters: number[];
@@ -98,6 +99,17 @@ type ApplyResult = {
   verified: boolean;
   repair_needed?: boolean;
   message: string;
+};
+
+type RemovalPlan = {
+  plan_id: string;
+  expires_in_seconds: number;
+  route: "direct" | "native_group";
+  source: Endpoint;
+  clusters: number[];
+  removed_entry_count: number;
+  keeps_native_group: boolean;
+  steps: string[];
 };
 
 export default function App({ hass }: { hass?: HomeAssistant }) {
@@ -178,7 +190,7 @@ export default function App({ hass }: { hass?: HomeAssistant }) {
               refresh={refresh}
               t={t}
             />
-            <StudioData snapshot={snapshot} t={t} />
+            <StudioData hass={hass} snapshot={snapshot} refresh={refresh} t={t} />
           </>
         ) : null}
       </main>
@@ -558,7 +570,95 @@ function errorMessage(error: unknown): string {
   return "The requested Matter operation failed.";
 }
 
-function StudioData({ snapshot, t }: { snapshot: StudioSnapshot; t: Copy }) {
+function StudioData({
+  hass,
+  snapshot,
+  refresh,
+  t,
+}: {
+  hass?: HomeAssistant;
+  snapshot: StudioSnapshot;
+  refresh: () => Promise<void>;
+  t: Copy;
+}) {
+  const [removalPlan, setRemovalPlan] = useState<RemovalPlan | null>(null);
+  const [removalRelationship, setRemovalRelationship] = useState<Relationship | null>(null);
+  const [removalConfirmed, setRemovalConfirmed] = useState(false);
+  const [removalWorking, setRemovalWorking] = useState(false);
+  const [removalMessage, setRemovalMessage] = useState<string | null>(null);
+  const [removalMessageIsError, setRemovalMessageIsError] = useState(false);
+
+  const reviewRemoval = async (relationship: Relationship) => {
+    if (!hass || relationship.source.node_id === null || relationship.source.endpoint_id === null) {
+      setRemovalMessage(t.removalUnavailable);
+      setRemovalMessageIsError(true);
+      return;
+    }
+    const message: { type: string; [key: string]: unknown } = {
+      type: "matter_binding_studio/prepare_remove_binding",
+      source_node_id: relationship.source.node_id,
+      source_endpoint_id: relationship.source.endpoint_id,
+      target_kind: relationship.targets.kind,
+    };
+    if (relationship.targets.kind === "group") {
+      if (relationship.targets.group_id === undefined) {
+        setRemovalMessage(t.removalUnavailable);
+        setRemovalMessageIsError(true);
+        return;
+      }
+      message.target_group_id = relationship.targets.group_id;
+    } else {
+      const target = relationship.targets.members[0];
+      if (!target || target.node_id === null || target.endpoint_id === null) {
+        setRemovalMessage(t.removalUnavailable);
+        setRemovalMessageIsError(true);
+        return;
+      }
+      message.target_node_id = target.node_id;
+      message.target_endpoint_id = target.endpoint_id;
+    }
+
+    setRemovalWorking(true);
+    setRemovalMessage(null);
+    try {
+      setRemovalPlan(await hass.callWS<RemovalPlan>(message));
+      setRemovalRelationship(relationship);
+      setRemovalConfirmed(false);
+    } catch (error) {
+      setRemovalMessage(errorMessage(error));
+      setRemovalMessageIsError(true);
+    } finally {
+      setRemovalWorking(false);
+    }
+  };
+
+  const applyRemoval = async () => {
+    if (!hass || !removalPlan || !removalConfirmed) return;
+    setRemovalWorking(true);
+    setRemovalMessage(null);
+    try {
+      const result = await hass.callWS<ApplyResult>({
+        type: "matter_binding_studio/apply_remove_binding",
+        plan_id: removalPlan.plan_id,
+        confirm: true,
+      });
+      setRemovalMessage(result.message);
+      setRemovalMessageIsError(!result.success || !result.verified);
+      if (result.success && result.verified) {
+        await refresh();
+      }
+    } catch (error) {
+      setRemovalMessage(errorMessage(error));
+      setRemovalMessageIsError(true);
+    } finally {
+      // Removal plans are single-use just like creation plans.
+      setRemovalPlan(null);
+      setRemovalRelationship(null);
+      setRemovalConfirmed(false);
+      setRemovalWorking(false);
+    }
+  };
+
   return (
     <div className="mbs-content">
       <section>
@@ -567,12 +667,68 @@ function StudioData({ snapshot, t }: { snapshot: StudioSnapshot; t: Copy }) {
         {snapshot.relationships.length ? (
           <div className="mbs-list">
             {snapshot.relationships.map((relationship) => (
-              <RelationshipRow key={relationship.id} relationship={relationship} t={t} />
+              <RelationshipRow
+                key={relationship.id}
+                relationship={relationship}
+                t={t}
+                onReviewRemoval={reviewRemoval}
+                removalWorking={removalWorking}
+              />
             ))}
           </div>
         ) : (
           <Empty text={t.noRelationships} />
         )}
+        {removalPlan && removalRelationship ? (
+          <div className="mbs-review mbs-removal-review">
+            <strong>{t.removalReviewTitle}</strong>
+            <p>
+              {endpointLabel(removalRelationship.source)} → {relationshipTargetLabel(removalRelationship)}
+            </p>
+            <CapabilityList clusters={removalPlan.clusters} t={t} />
+            <p className="mbs-meta">
+              {removalPlan.removed_entry_count} {t.bindingEntries}
+            </p>
+            {removalPlan.keeps_native_group ? <p className="mbs-warning">{t.removalKeepsGroup}</p> : null}
+            <ul>
+              {removalPlan.steps.map((step) => <li key={step}>{step}</li>)}
+            </ul>
+            <label className="mbs-confirm">
+              <input
+                type="checkbox"
+                checked={removalConfirmed}
+                onChange={(event) => setRemovalConfirmed(event.target.checked)}
+              />
+              {t.confirmRemoval}
+            </label>
+            <div className="mbs-review-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setRemovalPlan(null);
+                  setRemovalRelationship(null);
+                  setRemovalConfirmed(false);
+                }}
+                disabled={removalWorking}
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                className="mbs-danger-button"
+                onClick={() => void applyRemoval()}
+                disabled={!removalConfirmed || removalWorking}
+              >
+                {removalWorking ? t.working : t.removeBinding}
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {removalMessage ? (
+          <p className={removalMessageIsError ? "mbs-warning" : "mbs-success"}>
+            {removalMessage}
+          </p>
+        ) : null}
       </section>
 
       <section>
@@ -640,15 +796,16 @@ function StudioData({ snapshot, t }: { snapshot: StudioSnapshot; t: Copy }) {
 function RelationshipRow({
   relationship,
   t,
+  onReviewRemoval,
+  removalWorking,
 }: {
   relationship: Relationship;
   t: Copy;
+  onReviewRemoval: (relationship: Relationship) => void;
+  removalWorking: boolean;
 }) {
   const members = relationship.targets.members;
-  const targetName =
-    relationship.route === "native_group"
-      ? relationship.targets.name
-      : members[0] ? endpointLabel(members[0]) : relationship.targets.name;
+  const targetName = relationshipTargetLabel(relationship);
   return (
     <article className="mbs-card">
       <div className="mbs-card-topline">
@@ -670,8 +827,26 @@ function RelationshipRow({
       </div>
       <CapabilityList clusters={relationship.clusters} t={t} />
       {relationship.route === "native_group" ? <MemberList members={members} /> : null}
+      <div className="mbs-card-actions">
+        <button
+          type="button"
+          className="mbs-quiet-danger-button"
+          onClick={() => onReviewRemoval(relationship)}
+          disabled={removalWorking}
+        >
+          {t.reviewRemoval}
+        </button>
+      </div>
     </article>
   );
+}
+
+function relationshipTargetLabel(relationship: Relationship): string {
+  return relationship.route === "native_group"
+    ? relationship.targets.name
+    : relationship.targets.members[0]
+      ? endpointLabel(relationship.targets.members[0])
+      : relationship.targets.name;
 }
 
 function EndpointName({ endpoint }: { endpoint: Endpoint }) {

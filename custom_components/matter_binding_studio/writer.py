@@ -447,6 +447,143 @@ async def async_apply_groupcast(hass: HomeAssistant, *, plan_id: str) -> dict[st
         }
 
 
+async def async_prepare_remove_binding(
+    hass: HomeAssistant,
+    *,
+    source_node_id: int,
+    source_endpoint_id: int,
+    target_kind: str,
+    target_node_id: int | None,
+    target_endpoint_id: int | None,
+    target_group_id: int | None,
+) -> dict[str, Any]:
+    """Prepare the deletion of exactly one displayed Binding relationship.
+
+    A relationship can contain several cluster-specific Binding entries.  The
+    reviewed plan removes only entries with the same target identity, leaving
+    unrelated source bindings and every target ACL untouched.
+    """
+    snapshot = await async_get_snapshot(hass)
+    source = _find_endpoint(
+        snapshot.get("devices", []), source_node_id, source_endpoint_id
+    )
+    if source is None or not source.get("can_bind"):
+        raise StudioWriteError("The Binding source is no longer available. Refresh first.")
+
+    if target_kind == "endpoint":
+        if target_node_id is None or target_endpoint_id is None:
+            raise StudioWriteError("The direct Binding target is incomplete. Refresh first.")
+    elif target_kind == "group":
+        if target_group_id is None:
+            raise StudioWriteError("The native group target is incomplete. Refresh first.")
+    else:
+        raise StudioWriteError("The Binding target type is not supported.")
+
+    client = _require_client(hass)
+    bindings = await _read_bindings(client, source_node_id, source_endpoint_id)
+    removed_entries = [
+        entry
+        for entry in bindings
+        if _binding_matches_target(
+            entry,
+            target_kind=target_kind,
+            target_node_id=target_node_id,
+            target_endpoint_id=target_endpoint_id,
+            target_group_id=target_group_id,
+        )
+    ]
+    if not removed_entries:
+        raise StudioWriteError(
+            "This Binding relationship changed or no longer exists. Refresh and review again."
+        )
+
+    next_bindings = [entry for entry in bindings if entry not in removed_entries]
+    plan_id = secrets.token_urlsafe(24)
+    _pending_plans(hass)[plan_id] = {
+        "kind": "remove_binding",
+        "plan_id": plan_id,
+        "created_at": time.monotonic(),
+        "source": source,
+        "target_kind": target_kind,
+        "target_node_id": target_node_id,
+        "target_endpoint_id": target_endpoint_id,
+        "target_group_id": target_group_id,
+        "bindings_before": bindings,
+        "bindings_after": next_bindings,
+        "removed_entries": removed_entries,
+    }
+    _purge_expired_plans(hass)
+    return {
+        "plan_id": plan_id,
+        "expires_in_seconds": _PLAN_TTL_SECONDS,
+        "route": "native_group" if target_kind == "group" else "direct",
+        "source": source,
+        "clusters": sorted({int(entry["cluster_id"]) for entry in removed_entries}),
+        "removed_entry_count": len(removed_entries),
+        "keeps_native_group": target_kind == "group",
+        "steps": [
+            "Read the latest source Binding Cluster list.",
+            "Remove only the entries that match this displayed relationship.",
+            *(
+                ["Keep the native group, Group Key, membership, and ACLs unchanged."]
+                if target_kind == "group"
+                else ["Keep target ACLs unchanged."]
+            ),
+            "Write the complete remaining Binding Cluster list.",
+            "Read the Binding Cluster back from the source device.",
+        ],
+    }
+
+
+async def async_apply_remove_binding(
+    hass: HomeAssistant, *, plan_id: str
+) -> dict[str, Any]:
+    """Delete one reviewed relationship and verify the complete source table."""
+    plan = _take_plan(hass, plan_id, expected_kind="remove_binding")
+    source = plan["source"]
+    source_key = (int(source["node_id"]), int(source["endpoint_id"]))
+    lock = _source_locks(hass).setdefault(source_key, asyncio.Lock())
+    async with lock:
+        client = _require_client(hass)
+        current_bindings = await _read_bindings(client, *source_key)
+        if _binding_signature(current_bindings) != _binding_signature(
+            plan["bindings_before"]
+        ):
+            raise StudioWriteError(
+                "The source Binding list changed after review. Refresh and review a new plan."
+            )
+
+        try:
+            verified = await _write_and_verify_binding_table(
+                client,
+                source_node_id=source_key[0],
+                source_endpoint_id=source_key[1],
+                bindings=list(plan["bindings_after"]),
+            )
+        except Exception as err:  # noqa: BLE001 - report uncertain device state safely
+            _LOGGER.warning("Studio Binding removal could not be verified: %s", err)
+            verified = False
+        if not verified:
+            return {
+                "success": False,
+                "verified": False,
+                "repair_needed": True,
+                "message": "The Binding removal could not be verified. Refresh before retrying or changing the group.",
+            }
+
+        route = "native group" if plan["target_kind"] == "group" else "direct"
+        return {
+            "success": True,
+            "verified": True,
+            "message": f"The {route} Binding was removed and the source Binding Cluster was read back.",
+            "source": source,
+            "clusters": sorted(
+                {int(entry["cluster_id"]) for entry in plan["removed_entries"]}
+            ),
+            "keeps_native_group": plan["target_kind"] == "group",
+        }
+
+
 async def _validate_request(
     hass: HomeAssistant,
     source_node_id: int,
@@ -1161,6 +1298,36 @@ async def _write_and_verify_bindings(
     return False
 
 
+async def _write_and_verify_binding_table(
+    client: Any,
+    *,
+    source_node_id: int,
+    source_endpoint_id: int,
+    bindings: list[dict[str, int | None]],
+) -> bool:
+    """Replace one source Binding table and verify every remaining entry.
+
+    Matter writes the whole Binding list, so removal verification compares the
+    complete normalized table rather than only checking that one entry vanished.
+    """
+    fabric_index = await _read_fabric_index(client, source_node_id)
+    expected_signature = _binding_signature(bindings)
+    path = f"{source_endpoint_id}/{CLUSTER_BINDING}/{ATTR_BINDING}"
+    for tag_keys in (False, True):
+        payload = [_encode_binding(entry, fabric_index, tag_keys) for entry in bindings]
+        result = await client.write_attribute(
+            node_id=source_node_id, attribute_path=path, value=payload
+        )
+        if _write_result_failed(result):
+            continue
+        for _ in range(_VERIFY_ATTEMPTS):
+            readback = await _read_bindings(client, source_node_id, source_endpoint_id)
+            if _binding_signature(readback) == expected_signature:
+                return True
+            await asyncio.sleep(_VERIFY_DELAY_SECONDS)
+    return False
+
+
 def _encode_binding(
     entry: dict[str, int | None], fabric_index: int, tag_keys: bool
 ) -> dict[str, int]:
@@ -1192,6 +1359,24 @@ def _binding_exists(
         and entry.get("target_endpoint_id") == endpoint_id
         and entry.get("cluster_id") == cluster_id
         for entry in bindings
+    )
+
+
+def _binding_matches_target(
+    entry: Mapping[str, int | None],
+    *,
+    target_kind: str,
+    target_node_id: int | None,
+    target_endpoint_id: int | None,
+    target_group_id: int | None,
+) -> bool:
+    """Return whether a Binding entry belongs to the reviewed relationship."""
+    if target_kind == "group":
+        return entry.get("target_group_id") == target_group_id
+    return (
+        entry.get("target_group_id") is None
+        and entry.get("target_node_id") == target_node_id
+        and entry.get("target_endpoint_id") == target_endpoint_id
     )
 
 
