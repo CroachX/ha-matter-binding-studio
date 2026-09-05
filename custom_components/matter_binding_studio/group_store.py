@@ -124,6 +124,14 @@ class ManagedGroupStore:
         await self.async_put(updated)
         return updated
 
+    async def async_remove(self, group_id: int) -> None:
+        """Forget Studio metadata only after native cleanup has verified."""
+        data = self._require_loaded()
+        if str(group_id) not in data["groups"]:
+            raise KeyError(f"Unknown Studio group {group_id}")
+        del data["groups"][str(group_id)]
+        await self._store.async_save(data)
+
     def _require_loaded(self) -> dict[str, Any]:
         if self._data is None:
             raise RuntimeError("ManagedGroupStore.async_load() must be called first")

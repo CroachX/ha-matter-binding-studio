@@ -362,6 +362,12 @@ in-use/ambiguous rule all fail closed.
   only the cluster entries belonging to the reviewed target, writes the
   remaining table, and verifies that complete table by readback. It does not
   remove target ACLs or clean up native-group state.
+- Studio may clean an idle, Studio-owned native group only through a separate
+  review-and-confirm transaction. It rechecks that no Binding targets the
+  Group ID, removes concrete recorded group ACL targets, membership, Group Key
+  mappings, and Key Sets, then removes local metadata only after confirmation.
+  Any uncertain partial result stays `repair_needed`; Studio never cleans a
+  group created by another controller.
 - The Studio never creates a hidden virtual device to stand in for a group.
 
 ## 8. Existing backend to retain

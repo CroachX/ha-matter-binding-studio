@@ -58,8 +58,12 @@ Existing direct and groupcast relationships can be removed through a separate
 review-and-confirm transaction. Studio first re-reads the source Binding table,
 removes only the entries belonging to the selected relationship, writes the
 remaining table, then verifies the full table by readback. Removing a groupcast
-relationship leaves its native group, Group Key, membership, and ACLs intact;
-group cleanup and repair actions remain intentionally deferred.
+relationship leaves its native group, Group Key, membership, and ACLs intact.
+An idle group that was automatically created by Studio can then be cleaned up
+through a separate reviewed action. It rechecks that no Binding targets the
+Group ID, removes its recorded ACL targets, members, Group Key mappings, and
+Key Sets, then drops local metadata only after the device operations verify.
+If an operation is uncertain, the group remains recorded as needing repair.
 
 ## HACS installation
 

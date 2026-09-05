@@ -8066,6 +8066,12 @@ var t = (e, t) => () => (t || (e((t = { exports: {} }).exports, t), e = null), t
 		activeRelationships: "條使用中的關係",
 		controlSetPending: "此控制組尚在建立，尚未視為可用。",
 		controlSetRepairNeeded: "此控制組需要修復；請先檢查實體裝置的群組設定。",
+		reviewGroupCleanup: "檢視群組清理計畫",
+		cleanupGroup: "清理原生群組",
+		groupCleanupReviewTitle: "確認清理閒置原生群組",
+		confirmGroupCleanup: "我已確認這會刪除這個閒置群組的成員、ACL 與 Group Key。",
+		groupCleanupNeedsBindingRemoval: "仍有控制關係使用這個群組；請先移除 Binding。",
+		groupCleanupUnavailable: "只有 Studio 自動建立且沒有使用中的控制關係的群組可以清理。",
 		capacity: "群組與 Group Key 容量",
 		capacityDescription: "裝置回報且已快取的限制。建立群組廣播前會先做容量預檢。",
 		acl: "目標裝置 ACL",
@@ -8155,6 +8161,12 @@ var t = (e, t) => () => (t || (e((t = { exports: {} }).exports, t), e = null), t
 		activeRelationships: "active relationships",
 		controlSetPending: "This control set is still being created and is not considered ready.",
 		controlSetRepairNeeded: "This control set needs repair. Check its physical Matter group configuration first.",
+		reviewGroupCleanup: "Review group cleanup",
+		cleanupGroup: "Clean up native group",
+		groupCleanupReviewTitle: "Confirm idle native group cleanup",
+		confirmGroupCleanup: "I understand this removes this idle group's members, ACLs, and Group Key.",
+		groupCleanupNeedsBindingRemoval: "This group is still used by a control relationship; remove its Binding first.",
+		groupCleanupUnavailable: "Only an idle Studio-created group can be cleaned up.",
 		capacity: "Group and Group Key capacity",
 		capacityDescription: "Cached device-reported limits. Groupcast creation preflights this capacity before making changes.",
 		acl: "Target ACL",
@@ -8233,7 +8245,7 @@ var t = (e, t) => () => (t || (e((t = { exports: {} }).exports, t), e = null), t
 	t.exports = p();
 })))();
 function h({ hass: e }) {
-	let t = f[he(e)], n = (0, u.useRef)(e), r = (0, u.useRef)(!1), [i, a] = (0, u.useState)(null), [o, s] = (0, u.useState)(!1), [c, l] = (0, u.useState)(!1);
+	let t = f[ge(e)], n = (0, u.useRef)(e), r = (0, u.useRef)(!1), [i, a] = (0, u.useState)(null), [o, s] = (0, u.useState)(!1), [c, l] = (0, u.useState)(!1);
 	n.current = e;
 	let d = (0, u.useCallback)(async () => {
 		let e = n.current;
@@ -8310,7 +8322,7 @@ function h({ hass: e }) {
 	});
 }
 function g({ hass: e, snapshot: t, refresh: n, t: r }) {
-	let [i, a] = (0, u.useState)(""), [o, s] = (0, u.useState)([]), [c, l] = (0, u.useState)(!1), [d, f] = (0, u.useState)([]), [p, h] = (0, u.useState)(null), [g, v] = (0, u.useState)(!1), [x, S] = (0, u.useState)(!1), [re, T] = (0, u.useState)(null), [ie, ae] = (0, u.useState)(!1), se = t.devices.filter((e) => e.can_bind), E = se.find((e) => _(e) === i), ce = t.devices.filter((e) => e.can_be_target && _(e) !== i).sort(y), D = c && E?.area_name ? ce.filter((e) => e.area_name === E.area_name) : ce, O = D.filter((e) => o.includes(_(e))), ue = C(E, O), k = w(E, O, ue), A = O.length > 1 ? "native_group" : "direct", me = (e) => {
+	let [i, a] = (0, u.useState)(""), [o, s] = (0, u.useState)([]), [c, l] = (0, u.useState)(!1), [d, f] = (0, u.useState)([]), [p, h] = (0, u.useState)(null), [g, v] = (0, u.useState)(!1), [x, S] = (0, u.useState)(!1), [re, T] = (0, u.useState)(null), [ie, ae] = (0, u.useState)(!1), se = t.devices.filter((e) => e.can_bind), E = se.find((e) => _(e) === i), ce = t.devices.filter((e) => e.can_be_target && _(e) !== i).sort(y), D = c && E?.area_name ? ce.filter((e) => e.area_name === E.area_name) : ce, O = D.filter((e) => o.includes(_(e))), ue = C(E, O), de = w(E, O, ue), A = O.length > 1 ? "native_group" : "direct", me = (e) => {
 		let t = se.find((t) => _(t) === e), n = ce.filter((e) => o.includes(_(e))), r = !!t?.area_name;
 		a(e), l(r);
 		let i = n.filter((n) => _(n) !== e && (!r || ee(t, n)));
@@ -8318,7 +8330,7 @@ function g({ hass: e, snapshot: t, refresh: n, t: r }) {
 	}, he = (e) => {
 		let t = D.filter((t) => e.includes(_(t)));
 		s(t.map(_)), f(C(E, t)), h(null), T(null);
-	}, _e = (e) => {
+	}, ge = (e) => {
 		l(e);
 		let t = e ? O.filter((e) => ee(E, e)) : O;
 		s(t.map(_)), f(C(E, t)), h(null);
@@ -8414,7 +8426,7 @@ function g({ hass: e, snapshot: t, refresh: n, t: r }) {
 						children: [/* @__PURE__ */ (0, m.jsx)("input", {
 							type: "checkbox",
 							checked: c,
-							onChange: (e) => _e(e.target.checked)
+							onChange: (e) => ge(e.target.checked)
 						}), /* @__PURE__ */ (0, m.jsx)("span", { children: r.sameAreaOnly })]
 					})
 				]
@@ -8427,10 +8439,10 @@ function g({ hass: e, snapshot: t, refresh: n, t: r }) {
 						checked: d.includes(e),
 						onChange: () => ve(e)
 					}),
-					/* @__PURE__ */ (0, m.jsx)("span", { children: ge(e, r) }),
+					/* @__PURE__ */ (0, m.jsx)("span", { children: _e(e, r) }),
 					/* @__PURE__ */ (0, m.jsx)("small", {
-						className: te(k, e)?.supported_members === O.length ? "" : "mbs-partial",
-						children: ne(te(k, e), r)
+						className: te(de, e)?.supported_members === O.length ? "" : "mbs-partial",
+						children: ne(te(de, e), r)
 					})
 				] }, e)) : /* @__PURE__ */ (0, m.jsx)("p", {
 					className: "mbs-warning",
@@ -8455,13 +8467,13 @@ function g({ hass: e, snapshot: t, refresh: n, t: r }) {
 						" → ",
 						p.route === "direct" ? b(p.target) : `${p.targets.length} ${r.members}`
 					] }),
-					/* @__PURE__ */ (0, m.jsx)(de, {
+					/* @__PURE__ */ (0, m.jsx)(fe, {
 						clusters: p.clusters,
 						t: r
 					}),
 					p.route === "native_group" ? /* @__PURE__ */ (0, m.jsxs)(m.Fragment, { children: [
-						/* @__PURE__ */ (0, m.jsx)(pe, { members: p.targets }),
-						/* @__PURE__ */ (0, m.jsx)(fe, {
+						/* @__PURE__ */ (0, m.jsx)(k, { members: p.targets }),
+						/* @__PURE__ */ (0, m.jsx)(pe, {
 							coverage: p.coverage,
 							t: r
 						}),
@@ -8575,7 +8587,7 @@ function oe(e) {
 	return "The requested Matter operation failed.";
 }
 function se({ hass: e, snapshot: t, refresh: n, t: r }) {
-	let [i, a] = (0, u.useState)(null), [o, s] = (0, u.useState)(null), [c, l] = (0, u.useState)(!1), [d, f] = (0, u.useState)(!1), [p, h] = (0, u.useState)(null), [g, _] = (0, u.useState)(!1), v = async (t) => {
+	let [i, a] = (0, u.useState)(null), [o, s] = (0, u.useState)(null), [c, l] = (0, u.useState)(!1), [d, f] = (0, u.useState)(!1), [p, h] = (0, u.useState)(null), [g, _] = (0, u.useState)(!1), [v, y] = (0, u.useState)(null), [x, S] = (0, u.useState)(!1), [ee, C] = (0, u.useState)(!1), [w, te] = (0, u.useState)(null), [ne, re] = (0, u.useState)(!1), T = async (t) => {
 		if (!e || t.source.node_id === null || t.source.endpoint_id === null) {
 			h(r.removalUnavailable), _(!0);
 			return;
@@ -8608,7 +8620,7 @@ function se({ hass: e, snapshot: t, refresh: n, t: r }) {
 		} finally {
 			f(!1);
 		}
-	}, y = async () => {
+	}, ie = async () => {
 		if (!(!e || !i || !c)) {
 			f(!0), h(null);
 			try {
@@ -8624,12 +8636,44 @@ function se({ hass: e, snapshot: t, refresh: n, t: r }) {
 				a(null), s(null), l(!1), f(!1);
 			}
 		}
+	}, ae = async (t) => {
+		if (!e || !t.managed_by_studio || t.active_relationships > 0) {
+			te(t.active_relationships > 0 ? r.groupCleanupNeedsBindingRemoval : r.groupCleanupUnavailable), re(!0);
+			return;
+		}
+		C(!0), te(null);
+		try {
+			y(await e.callWS({
+				type: "matter_binding_studio/prepare_cleanup_group",
+				group_id: t.group_id
+			})), S(!1);
+		} catch (e) {
+			te(oe(e)), re(!0);
+		} finally {
+			C(!1);
+		}
+	}, se = async () => {
+		if (!(!e || !v || !x)) {
+			C(!0), te(null);
+			try {
+				let t = await e.callWS({
+					type: "matter_binding_studio/apply_cleanup_group",
+					plan_id: v.plan_id,
+					confirm: !0
+				});
+				te(t.message), re(!t.success || !t.verified), t.success && t.verified && await n();
+			} catch (e) {
+				te(oe(e)), re(!0);
+			} finally {
+				y(null), S(!1), C(!1);
+			}
+		}
 	};
 	return /* @__PURE__ */ (0, m.jsxs)("div", {
 		className: "mbs-content",
 		children: [
 			/* @__PURE__ */ (0, m.jsxs)("section", { children: [
-				/* @__PURE__ */ (0, m.jsx)(A, {
+				/* @__PURE__ */ (0, m.jsx)(me, {
 					title: r.controlRelationships,
 					count: t.relationships.length
 				}),
@@ -8642,10 +8686,10 @@ function se({ hass: e, snapshot: t, refresh: n, t: r }) {
 					children: t.relationships.map((e) => /* @__PURE__ */ (0, m.jsx)(D, {
 						relationship: e,
 						t: r,
-						onReviewRemoval: v,
+						onReviewRemoval: T,
 						removalWorking: d
 					}, e.id))
-				}) : /* @__PURE__ */ (0, m.jsx)(me, { text: r.noRelationships }),
+				}) : /* @__PURE__ */ (0, m.jsx)(he, { text: r.noRelationships }),
 				i && o ? /* @__PURE__ */ (0, m.jsxs)("div", {
 					className: "mbs-review mbs-removal-review",
 					children: [
@@ -8653,9 +8697,9 @@ function se({ hass: e, snapshot: t, refresh: n, t: r }) {
 						/* @__PURE__ */ (0, m.jsxs)("p", { children: [
 							b(o.source),
 							" → ",
-							O(o)
+							ue(o)
 						] }),
-						/* @__PURE__ */ (0, m.jsx)(de, {
+						/* @__PURE__ */ (0, m.jsx)(fe, {
 							clusters: i.clusters,
 							t: r
 						}),
@@ -8692,7 +8736,7 @@ function se({ hass: e, snapshot: t, refresh: n, t: r }) {
 							}), /* @__PURE__ */ (0, m.jsx)("button", {
 								type: "button",
 								className: "mbs-danger-button",
-								onClick: () => void y(),
+								onClick: () => void ie(),
 								disabled: !c || d,
 								children: d ? r.working : r.removeBinding
 							})]
@@ -8710,7 +8754,7 @@ function se({ hass: e, snapshot: t, refresh: n, t: r }) {
 				t: r
 			}),
 			/* @__PURE__ */ (0, m.jsxs)("section", { children: [
-				/* @__PURE__ */ (0, m.jsx)(A, {
+				/* @__PURE__ */ (0, m.jsx)(me, {
 					title: r.controlSets,
 					count: t.native_control_sets.length
 				}),
@@ -8720,43 +8764,58 @@ function se({ hass: e, snapshot: t, refresh: n, t: r }) {
 				}),
 				t.native_control_sets.length ? /* @__PURE__ */ (0, m.jsx)("div", {
 					className: "mbs-list",
-					children: t.native_control_sets.map((e) => /* @__PURE__ */ (0, m.jsxs)("article", {
-						className: "mbs-card",
-						children: [
-							/* @__PURE__ */ (0, m.jsxs)("div", {
-								className: "mbs-card-topline",
-								children: [/* @__PURE__ */ (0, m.jsx)("strong", { children: e.name }), /* @__PURE__ */ (0, m.jsx)(de, {
-									clusters: e.clusters,
-									t: r
-								})]
-							}),
-							/* @__PURE__ */ (0, m.jsxs)("p", {
-								className: "mbs-meta",
-								children: [
-									e.members.length,
-									" ",
-									r.members,
-									" · ",
-									e.active_relationships,
-									" ",
-									r.activeRelationships
-								]
-							}),
-							e.status === "pending" ? /* @__PURE__ */ (0, m.jsx)("p", {
-								className: "mbs-warning",
-								children: r.controlSetPending
-							}) : null,
-							e.status === "repair_needed" ? /* @__PURE__ */ (0, m.jsx)("p", {
-								className: "mbs-warning",
-								children: r.controlSetRepairNeeded
-							}) : null,
-							/* @__PURE__ */ (0, m.jsx)(pe, { members: e.members })
-						]
+					children: t.native_control_sets.map((e) => /* @__PURE__ */ (0, m.jsx)(O, {
+						controlSet: e,
+						t: r,
+						onReviewCleanup: ae,
+						cleanupWorking: ee
 					}, e.group_id))
-				}) : /* @__PURE__ */ (0, m.jsx)(me, { text: r.noControlSets })
+				}) : /* @__PURE__ */ (0, m.jsx)(he, { text: r.noControlSets }),
+				v ? /* @__PURE__ */ (0, m.jsxs)("div", {
+					className: "mbs-review mbs-removal-review",
+					children: [
+						/* @__PURE__ */ (0, m.jsx)("strong", { children: r.groupCleanupReviewTitle }),
+						/* @__PURE__ */ (0, m.jsx)("p", { children: v.name }),
+						/* @__PURE__ */ (0, m.jsx)(k, { members: v.members }),
+						/* @__PURE__ */ (0, m.jsx)(fe, {
+							clusters: v.clusters,
+							t: r
+						}),
+						/* @__PURE__ */ (0, m.jsx)("ul", { children: v.steps.map((e) => /* @__PURE__ */ (0, m.jsx)("li", { children: e }, e)) }),
+						/* @__PURE__ */ (0, m.jsxs)("label", {
+							className: "mbs-confirm",
+							children: [/* @__PURE__ */ (0, m.jsx)("input", {
+								type: "checkbox",
+								checked: x,
+								onChange: (e) => S(e.target.checked)
+							}), r.confirmGroupCleanup]
+						}),
+						/* @__PURE__ */ (0, m.jsxs)("div", {
+							className: "mbs-review-actions",
+							children: [/* @__PURE__ */ (0, m.jsx)("button", {
+								type: "button",
+								onClick: () => {
+									y(null), S(!1);
+								},
+								disabled: ee,
+								children: r.cancel
+							}), /* @__PURE__ */ (0, m.jsx)("button", {
+								type: "button",
+								className: "mbs-danger-button",
+								onClick: () => void se(),
+								disabled: !x || ee,
+								children: ee ? r.working : r.cleanupGroup
+							})]
+						})
+					]
+				}) : null,
+				w ? /* @__PURE__ */ (0, m.jsx)("p", {
+					className: ne ? "mbs-warning" : "mbs-success",
+					children: w
+				}) : null
 			] }),
 			/* @__PURE__ */ (0, m.jsxs)("section", { children: [
-				/* @__PURE__ */ (0, m.jsx)(A, {
+				/* @__PURE__ */ (0, m.jsx)(me, {
 					title: r.capacity,
 					count: t.capacities.length
 				}),
@@ -8770,12 +8829,12 @@ function se({ hass: e, snapshot: t, refresh: n, t: r }) {
 						className: "mbs-capacity",
 						children: [/* @__PURE__ */ (0, m.jsx)("strong", { children: e.name }), e.status === "available" ? /* @__PURE__ */ (0, m.jsxs)("div", {
 							className: "mbs-capacity-values",
-							children: [/* @__PURE__ */ (0, m.jsx)(k, {
+							children: [/* @__PURE__ */ (0, m.jsx)(A, {
 								label: r.groups,
 								used: e.group_table_entries,
 								maximum: e.max_groups_per_fabric,
 								unavailable: r.unavailable
-							}), /* @__PURE__ */ (0, m.jsx)(k, {
+							}), /* @__PURE__ */ (0, m.jsx)(A, {
 								label: r.groupKeys,
 								used: e.group_key_map_entries,
 								maximum: e.max_group_keys_per_fabric,
@@ -8841,7 +8900,7 @@ function E({ hass: e, snapshot: t, t: n }) {
 		}
 	};
 	return /* @__PURE__ */ (0, m.jsxs)("section", { children: [
-		/* @__PURE__ */ (0, m.jsx)(A, {
+		/* @__PURE__ */ (0, m.jsx)(me, {
 			title: n.acl,
 			count: o?.entries.length ?? 0
 		}),
@@ -9000,7 +9059,7 @@ function le({ capacity: e, t }) {
 	});
 }
 function D({ relationship: e, t, onReviewRemoval: n, removalWorking: r }) {
-	let i = e.targets.members, a = O(e);
+	let i = e.targets.members, a = ue(e);
 	return /* @__PURE__ */ (0, m.jsxs)("article", {
 		className: "mbs-card",
 		children: [
@@ -9009,7 +9068,7 @@ function D({ relationship: e, t, onReviewRemoval: n, removalWorking: r }) {
 				children: [/* @__PURE__ */ (0, m.jsxs)("div", {
 					className: "mbs-route",
 					children: [
-						/* @__PURE__ */ (0, m.jsx)(ue, { endpoint: e.source }),
+						/* @__PURE__ */ (0, m.jsx)(de, { endpoint: e.source }),
 						/* @__PURE__ */ (0, m.jsx)("span", {
 							"aria-hidden": "true",
 							children: "→"
@@ -9028,11 +9087,11 @@ function D({ relationship: e, t, onReviewRemoval: n, removalWorking: r }) {
 					children: e.route === "native_group" ? t.nativeGroup : t.direct
 				})]
 			}),
-			/* @__PURE__ */ (0, m.jsx)(de, {
+			/* @__PURE__ */ (0, m.jsx)(fe, {
 				clusters: e.clusters,
 				t
 			}),
-			e.route === "native_group" ? /* @__PURE__ */ (0, m.jsx)(pe, { members: i }) : null,
+			e.route === "native_group" ? /* @__PURE__ */ (0, m.jsx)(k, { members: i }) : null,
 			/* @__PURE__ */ (0, m.jsx)("div", {
 				className: "mbs-card-actions",
 				children: /* @__PURE__ */ (0, m.jsx)("button", {
@@ -9046,25 +9105,74 @@ function D({ relationship: e, t, onReviewRemoval: n, removalWorking: r }) {
 		]
 	});
 }
-function O(e) {
+function O({ controlSet: e, t, onReviewCleanup: n, cleanupWorking: r }) {
+	let i = !!(e.managed_by_studio && e.active_relationships === 0);
+	return /* @__PURE__ */ (0, m.jsxs)("article", {
+		className: "mbs-card",
+		children: [
+			/* @__PURE__ */ (0, m.jsxs)("div", {
+				className: "mbs-card-topline",
+				children: [/* @__PURE__ */ (0, m.jsx)("strong", { children: e.name }), /* @__PURE__ */ (0, m.jsx)(fe, {
+					clusters: e.clusters,
+					t
+				})]
+			}),
+			/* @__PURE__ */ (0, m.jsxs)("p", {
+				className: "mbs-meta",
+				children: [
+					e.members.length,
+					" ",
+					t.members,
+					" · ",
+					e.active_relationships,
+					" ",
+					t.activeRelationships
+				]
+			}),
+			e.status === "pending" ? /* @__PURE__ */ (0, m.jsx)("p", {
+				className: "mbs-warning",
+				children: t.controlSetPending
+			}) : null,
+			e.status === "repair_needed" ? /* @__PURE__ */ (0, m.jsx)("p", {
+				className: "mbs-warning",
+				children: t.controlSetRepairNeeded
+			}) : null,
+			/* @__PURE__ */ (0, m.jsx)(k, { members: e.members }),
+			e.managed_by_studio ? /* @__PURE__ */ (0, m.jsxs)("div", {
+				className: "mbs-card-actions",
+				children: [/* @__PURE__ */ (0, m.jsx)("button", {
+					type: "button",
+					className: "mbs-quiet-danger-button",
+					onClick: () => n(e),
+					disabled: !i || r,
+					children: t.reviewGroupCleanup
+				}), i ? null : /* @__PURE__ */ (0, m.jsx)("span", {
+					className: "mbs-meta",
+					children: t.groupCleanupNeedsBindingRemoval
+				})]
+			}) : null
+		]
+	});
+}
+function ue(e) {
 	return e.route === "native_group" ? e.targets.name : e.targets.members[0] ? b(e.targets.members[0]) : e.targets.name;
 }
-function ue({ endpoint: e }) {
+function de({ endpoint: e }) {
 	return /* @__PURE__ */ (0, m.jsx)("div", { children: /* @__PURE__ */ (0, m.jsx)("strong", { children: b(e) }) });
 }
-function de({ clusters: e, t }) {
+function fe({ clusters: e, t }) {
 	return e.length ? /* @__PURE__ */ (0, m.jsx)("div", {
 		className: "mbs-chips",
-		children: e.map((e) => /* @__PURE__ */ (0, m.jsx)("span", { children: ge(e, t) }, e))
+		children: e.map((e) => /* @__PURE__ */ (0, m.jsx)("span", { children: _e(e, t) }, e))
 	}) : null;
 }
-function fe({ coverage: e, t }) {
+function pe({ coverage: e, t }) {
 	return e.length ? /* @__PURE__ */ (0, m.jsx)("div", {
 		className: "mbs-coverage-list",
 		children: e.map((e) => /* @__PURE__ */ (0, m.jsxs)("p", {
 			className: e.supported_members === e.total_members ? "mbs-meta" : "mbs-partial",
 			children: [
-				/* @__PURE__ */ (0, m.jsx)("strong", { children: ge(e.cluster_id, t) }),
+				/* @__PURE__ */ (0, m.jsx)("strong", { children: _e(e.cluster_id, t) }),
 				" · ",
 				ne(e, t),
 				e.unsupported_members.length ? ` · ${t.notSupportedBy}: ${e.unsupported_members.join(", ")}` : ""
@@ -9072,36 +9180,36 @@ function fe({ coverage: e, t }) {
 		}, e.cluster_id))
 	}) : null;
 }
-function pe({ members: e }) {
+function k({ members: e }) {
 	return e.length ? /* @__PURE__ */ (0, m.jsx)("div", {
 		className: "mbs-members",
 		children: e.map((e) => /* @__PURE__ */ (0, m.jsx)("span", { children: b(e) }, `${e.node_id}-${e.endpoint_id}`))
 	}) : null;
 }
-function k({ label: e, used: t, maximum: n, unavailable: r }) {
+function A({ label: e, used: t, maximum: n, unavailable: r }) {
 	return /* @__PURE__ */ (0, m.jsxs)("div", { children: [/* @__PURE__ */ (0, m.jsx)("small", { children: e }), /* @__PURE__ */ (0, m.jsx)("strong", { children: t !== null && n !== null ? `${t} / ${n}` : r })] });
 }
-function A({ title: e, count: t }) {
+function me({ title: e, count: t }) {
 	return /* @__PURE__ */ (0, m.jsxs)("div", {
 		className: "mbs-section-title",
 		children: [/* @__PURE__ */ (0, m.jsx)("h2", { children: e }), /* @__PURE__ */ (0, m.jsx)("span", { children: t })]
 	});
 }
-function me({ text: e }) {
+function he({ text: e }) {
 	return /* @__PURE__ */ (0, m.jsx)("p", {
 		className: "mbs-empty",
 		children: e
 	});
 }
-function he(e) {
+function ge(e) {
 	return (e?.locale?.language ?? e?.language ?? "en").toLowerCase().startsWith("zh") ? "zh-Hant" : "en";
 }
-function ge(e, t) {
+function _e(e, t) {
 	return e === 6 ? t.onOff : e === 8 ? t.brightness : e === 768 ? t.colorTemperature : String(e);
 }
 //#endregion
 //#region src/styles.css?inline
-var _e = ".mbs-root{min-height:100%;color:var(--primary-text-color,#1d1b20);font-family:Roboto,Noto Sans TC,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif}.mbs-root *{box-sizing:border-box}.mbs-root h1,.mbs-root h2,.mbs-root p{margin:0}.mbs-root button{font:inherit}.mbs-panel{max-width:1180px;margin:0 auto;padding:24px}.mbs-header{color:var(--primary-text-color,#1d1b20);background:linear-gradient(135deg, color-mix(in srgb, var(--primary-color,#006a6a) 12%, var(--card-background-color,#fff)), var(--card-background-color,#fff));box-shadow:var(--ha-card-box-shadow,0 2px 2px #0000001a);border-radius:14px;justify-content:space-between;align-items:flex-start;gap:24px;padding:22px;display:flex}.mbs-eyebrow,.mbs-route-label,.mbs-section-title span,.mbs-chips span,.mbs-members span{border-radius:999px;align-items:center;display:inline-flex}.mbs-eyebrow{color:var(--primary-color,#006a6a);background:color-mix(in srgb, var(--primary-color,#006a6a) 12%, transparent);padding:3px 9px;font-size:12px;font-weight:700}.mbs-header h1{letter-spacing:-.015em;margin-top:8px;font-size:26px}.mbs-header p{color:var(--secondary-text-color,#6b6570);margin-top:5px}.mbs-header button{min-height:38px;color:var(--text-primary-color,#fff);background:var(--primary-color,#006a6a);cursor:pointer;border:0;border-radius:19px;padding:0 16px;font-weight:650}.mbs-header button:disabled{cursor:not-allowed;opacity:.55}.mbs-scope,.mbs-notice,.mbs-warning,.mbs-success,.mbs-loading,.mbs-empty{border-radius:9px;padding:13px 15px;font-size:14px;line-height:1.55;margin-top:18px!important}.mbs-scope{border-left:3px solid var(--primary-color,#006a6a);background:var(--secondary-background-color,#f4f1f9)}.mbs-notice,.mbs-empty{color:var(--secondary-text-color,#6b6570);background:var(--secondary-background-color,#f4f1f9)}.mbs-warning{color:var(--warning-color,#967200);background:color-mix(in srgb, var(--warning-color,#967200) 12%, transparent)}.mbs-success{color:var(--success-color,#147a3d);background:color-mix(in srgb, var(--success-color,#147a3d) 12%, transparent)}.mbs-loading{color:var(--secondary-text-color,#6b6570);text-align:center}.mbs-composer{border:1px solid color-mix(in srgb, var(--primary-color,#006a6a) 30%, var(--divider-color,#dfdae2));background:var(--card-background-color,#fff);box-shadow:var(--ha-card-box-shadow,0 2px 2px #0000001a);border-radius:12px;margin-top:24px;padding:19px}.mbs-form-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px;display:grid}.mbs-form-grid label,.mbs-target-picker>label,.mbs-capability-picker>label,.mbs-confirm{color:var(--primary-text-color,#1d1b20);gap:6px;font-size:13px;font-weight:650;display:grid}.mbs-form-grid .mbs-area-filter{cursor:pointer;grid-column:1/-1;align-items:center;gap:8px;width:fit-content;font-weight:500;display:inline-flex}.mbs-area-filter input{width:16px;height:16px;accent-color:var(--primary-color,#006a6a);margin:0}.mbs-form-grid select{border:1px solid var(--divider-color,#dfdae2);width:100%;min-height:40px;color:var(--primary-text-color,#1d1b20);background:var(--card-background-color,#fff);font:inherit;border-radius:8px;padding:0 10px}.mbs-target-picker{border:1px solid var(--divider-color,#dfdae2);border-radius:8px;grid-column:1/-1;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:0;padding:11px;display:grid}.mbs-target-picker legend{color:var(--secondary-text-color,#6b6570);padding:0 5px;font-size:12px}.mbs-target-picker>label{align-items:center;gap:8px;font-weight:500;display:inline-flex}.mbs-target-picker input{width:16px;height:16px;accent-color:var(--primary-color,#006a6a);margin:0}.mbs-capability-picker{border:1px solid var(--divider-color,#dfdae2);border-radius:8px;flex-wrap:wrap;gap:10px 16px;margin:16px 0 0;padding:12px;display:flex}.mbs-capability-picker legend{color:var(--secondary-text-color,#6b6570);padding:0 5px;font-size:12px}.mbs-capability-picker>label,.mbs-confirm{align-items:center;gap:8px;font-weight:500;display:inline-flex}.mbs-capability-picker small{color:var(--secondary-text-color,#6b6570);font-size:11px}.mbs-capability-picker input,.mbs-confirm input{width:16px;height:16px;accent-color:var(--primary-color,#006a6a)}.mbs-actions{justify-content:flex-end;margin-top:16px;display:flex}.mbs-actions button,.mbs-review>button,.mbs-review-actions button,.mbs-card-actions button{min-height:38px;color:var(--text-primary-color,#fff);background:var(--primary-color,#006a6a);cursor:pointer;font:inherit;border:0;border-radius:19px;padding:0 16px;font-weight:650}.mbs-actions button:disabled,.mbs-review>button:disabled,.mbs-review-actions button:disabled,.mbs-card-actions button:disabled{cursor:not-allowed;opacity:.55}.mbs-review{background:color-mix(in srgb, var(--primary-color,#006a6a) 7%, var(--card-background-color,#fff));border-radius:9px;gap:10px;margin-top:16px;padding:15px;display:grid}.mbs-review ul{color:var(--secondary-text-color,#6b6570);gap:5px;margin:0;padding-left:20px;font-size:13px;line-height:1.45;display:grid}.mbs-review>button{justify-self:start}.mbs-review-actions,.mbs-card-actions{flex-wrap:wrap;align-items:center;gap:9px;display:flex}.mbs-removal-review{border:1px solid color-mix(in srgb, var(--error-color,#ba1a1a) 35%, var(--divider-color,#dfdae2))}.mbs-danger-button{background:var(--error-color,#ba1a1a)!important}.mbs-quiet-danger-button{color:var(--error-color,#ba1a1a)!important;background:color-mix(in srgb, var(--error-color,#ba1a1a) 10%, transparent)!important}.mbs-content{gap:20px;margin-top:24px;display:grid}.mbs-content section{background:var(--card-background-color,#fff);box-shadow:var(--ha-card-box-shadow,0 2px 2px #0000001a);border-radius:12px;padding:19px}.mbs-section-title{justify-content:space-between;align-items:center;gap:12px;display:flex}.mbs-section-title h2{font-size:18px}.mbs-section-title span{min-width:24px;color:var(--secondary-text-color,#6b6570);background:var(--secondary-background-color,#f4f1f9);justify-content:center;padding:3px 8px;font-size:12px}.mbs-description{color:var(--secondary-text-color,#6b6570);font-size:13px;line-height:1.5;margin-top:5px!important}.mbs-list{gap:10px;margin-top:14px;display:grid}.mbs-card,.mbs-capacity{border:1px solid var(--divider-color,#dfdae2);border-radius:10px;padding:14px}.mbs-card-topline{justify-content:space-between;align-items:flex-start;gap:12px;display:flex}.mbs-route{align-items:center;gap:11px;min-width:0;display:flex}.mbs-route>span{color:var(--primary-color,#006a6a);font-size:20px}.mbs-route strong,.mbs-card strong,.mbs-capacity>strong{color:var(--primary-text-color,#1d1b20)}.mbs-route-label{color:var(--primary-color,#006a6a);background:color-mix(in srgb, var(--primary-color,#006a6a) 12%, transparent);flex:none;padding:4px 9px;font-size:12px;font-weight:700}.mbs-meta{color:var(--secondary-text-color,#6b6570);font-size:12px;line-height:1.45;margin-top:3px!important}.mbs-partial{color:var(--warning-color,#967200);margin:3px 0 0;font-size:12px;line-height:1.45}.mbs-coverage-list{gap:5px;margin-top:10px;display:grid}.mbs-coverage-list strong{color:var(--primary-text-color,#1d1b20)}.mbs-chips,.mbs-members{flex-wrap:wrap;gap:6px;margin-top:12px;display:flex}.mbs-chips span,.mbs-members span{color:var(--primary-text-color,#1d1b20);background:var(--secondary-background-color,#f4f1f9);padding:4px 9px;font-size:12px}.mbs-members span{background:color-mix(in srgb, var(--primary-color,#006a6a) 8%, var(--secondary-background-color,#f4f1f9))}.mbs-capacity-grid{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:14px;display:grid}.mbs-capacity-values{grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;display:grid}.mbs-capacity-values>div{background:var(--secondary-background-color,#f4f1f9);border-radius:7px;padding:8px}.mbs-capacity-values small{color:var(--secondary-text-color,#6b6570);font-size:11px;display:block}.mbs-capacity-values strong{margin-top:3px;font-size:15px;display:block}.mbs-acl-toolbar{flex-wrap:wrap;align-items:end;gap:10px;margin-top:14px;display:flex}.mbs-acl-toolbar label{flex:300px;gap:6px;font-size:13px;font-weight:650;display:grid}.mbs-acl-toolbar select{border:1px solid var(--divider-color,#dfdae2);width:100%;min-height:40px;color:var(--primary-text-color,#1d1b20);background:var(--card-background-color,#fff);font:inherit;border-radius:8px;padding:0 10px}.mbs-acl-toolbar button{min-height:40px;color:var(--text-primary-color,#fff);background:var(--primary-color,#006a6a);cursor:pointer;font:inherit;border:0;border-radius:20px;padding:0 16px;font-weight:650}.mbs-acl-toolbar button:disabled{cursor:not-allowed;opacity:.55}.mbs-acl-capacity{flex-wrap:wrap;gap:8px;margin-top:14px;display:flex}.mbs-acl-capacity span,.mbs-acl-state{color:var(--primary-text-color,#1d1b20);background:var(--secondary-background-color,#f4f1f9);border-radius:999px;align-items:center;padding:4px 9px;font-size:12px;display:inline-flex}.mbs-acl-entry{gap:5px;display:grid}.mbs-acl-details{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:7px;display:grid}.mbs-acl-details>div{background:var(--secondary-background-color,#f4f1f9);border-radius:7px;padding:8px}.mbs-acl-details small{color:var(--secondary-text-color,#6b6570);font-size:11px;display:block}.mbs-acl-details p{font-size:13px;line-height:1.45;margin-top:3px!important}.mbs-acl-protected{color:var(--secondary-text-color,#6b6570)}.mbs-acl-used{color:var(--success-color,#147a3d);background:color-mix(in srgb, var(--success-color,#147a3d) 12%, transparent)}.mbs-acl-unused{color:var(--warning-color,#967200);background:color-mix(in srgb, var(--warning-color,#967200) 12%, transparent)}.mbs-acl-unknown{color:var(--error-color,#ba1a1a);background:color-mix(in srgb, var(--error-color,#ba1a1a) 10%, transparent)}@media (width<=600px){.mbs-panel{padding:14px}.mbs-header{flex-direction:column;align-items:stretch}.mbs-header button{width:100%}.mbs-form-grid{grid-template-columns:1fr}.mbs-actions button,.mbs-review>button,.mbs-review-actions button,.mbs-acl-toolbar button{width:100%}.mbs-card-topline{flex-direction:column;align-items:stretch}.mbs-route-label{align-self:flex-start}}", ve = class extends HTMLElement {
+var ve = ".mbs-root{min-height:100%;color:var(--primary-text-color,#1d1b20);font-family:Roboto,Noto Sans TC,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif}.mbs-root *{box-sizing:border-box}.mbs-root h1,.mbs-root h2,.mbs-root p{margin:0}.mbs-root button{font:inherit}.mbs-panel{max-width:1180px;margin:0 auto;padding:24px}.mbs-header{color:var(--primary-text-color,#1d1b20);background:linear-gradient(135deg, color-mix(in srgb, var(--primary-color,#006a6a) 12%, var(--card-background-color,#fff)), var(--card-background-color,#fff));box-shadow:var(--ha-card-box-shadow,0 2px 2px #0000001a);border-radius:14px;justify-content:space-between;align-items:flex-start;gap:24px;padding:22px;display:flex}.mbs-eyebrow,.mbs-route-label,.mbs-section-title span,.mbs-chips span,.mbs-members span{border-radius:999px;align-items:center;display:inline-flex}.mbs-eyebrow{color:var(--primary-color,#006a6a);background:color-mix(in srgb, var(--primary-color,#006a6a) 12%, transparent);padding:3px 9px;font-size:12px;font-weight:700}.mbs-header h1{letter-spacing:-.015em;margin-top:8px;font-size:26px}.mbs-header p{color:var(--secondary-text-color,#6b6570);margin-top:5px}.mbs-header button{min-height:38px;color:var(--text-primary-color,#fff);background:var(--primary-color,#006a6a);cursor:pointer;border:0;border-radius:19px;padding:0 16px;font-weight:650}.mbs-header button:disabled{cursor:not-allowed;opacity:.55}.mbs-scope,.mbs-notice,.mbs-warning,.mbs-success,.mbs-loading,.mbs-empty{border-radius:9px;padding:13px 15px;font-size:14px;line-height:1.55;margin-top:18px!important}.mbs-scope{border-left:3px solid var(--primary-color,#006a6a);background:var(--secondary-background-color,#f4f1f9)}.mbs-notice,.mbs-empty{color:var(--secondary-text-color,#6b6570);background:var(--secondary-background-color,#f4f1f9)}.mbs-warning{color:var(--warning-color,#967200);background:color-mix(in srgb, var(--warning-color,#967200) 12%, transparent)}.mbs-success{color:var(--success-color,#147a3d);background:color-mix(in srgb, var(--success-color,#147a3d) 12%, transparent)}.mbs-loading{color:var(--secondary-text-color,#6b6570);text-align:center}.mbs-composer{border:1px solid color-mix(in srgb, var(--primary-color,#006a6a) 30%, var(--divider-color,#dfdae2));background:var(--card-background-color,#fff);box-shadow:var(--ha-card-box-shadow,0 2px 2px #0000001a);border-radius:12px;margin-top:24px;padding:19px}.mbs-form-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px;display:grid}.mbs-form-grid label,.mbs-target-picker>label,.mbs-capability-picker>label,.mbs-confirm{color:var(--primary-text-color,#1d1b20);gap:6px;font-size:13px;font-weight:650;display:grid}.mbs-form-grid .mbs-area-filter{cursor:pointer;grid-column:1/-1;align-items:center;gap:8px;width:fit-content;font-weight:500;display:inline-flex}.mbs-area-filter input{width:16px;height:16px;accent-color:var(--primary-color,#006a6a);margin:0}.mbs-form-grid select{border:1px solid var(--divider-color,#dfdae2);width:100%;min-height:40px;color:var(--primary-text-color,#1d1b20);background:var(--card-background-color,#fff);font:inherit;border-radius:8px;padding:0 10px}.mbs-target-picker{border:1px solid var(--divider-color,#dfdae2);border-radius:8px;grid-column:1/-1;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:0;padding:11px;display:grid}.mbs-target-picker legend{color:var(--secondary-text-color,#6b6570);padding:0 5px;font-size:12px}.mbs-target-picker>label{align-items:center;gap:8px;font-weight:500;display:inline-flex}.mbs-target-picker input{width:16px;height:16px;accent-color:var(--primary-color,#006a6a);margin:0}.mbs-capability-picker{border:1px solid var(--divider-color,#dfdae2);border-radius:8px;flex-wrap:wrap;gap:10px 16px;margin:16px 0 0;padding:12px;display:flex}.mbs-capability-picker legend{color:var(--secondary-text-color,#6b6570);padding:0 5px;font-size:12px}.mbs-capability-picker>label,.mbs-confirm{align-items:center;gap:8px;font-weight:500;display:inline-flex}.mbs-capability-picker small{color:var(--secondary-text-color,#6b6570);font-size:11px}.mbs-capability-picker input,.mbs-confirm input{width:16px;height:16px;accent-color:var(--primary-color,#006a6a)}.mbs-actions{justify-content:flex-end;margin-top:16px;display:flex}.mbs-actions button,.mbs-review>button,.mbs-review-actions button,.mbs-card-actions button{min-height:38px;color:var(--text-primary-color,#fff);background:var(--primary-color,#006a6a);cursor:pointer;font:inherit;border:0;border-radius:19px;padding:0 16px;font-weight:650}.mbs-actions button:disabled,.mbs-review>button:disabled,.mbs-review-actions button:disabled,.mbs-card-actions button:disabled{cursor:not-allowed;opacity:.55}.mbs-review{background:color-mix(in srgb, var(--primary-color,#006a6a) 7%, var(--card-background-color,#fff));border-radius:9px;gap:10px;margin-top:16px;padding:15px;display:grid}.mbs-review ul{color:var(--secondary-text-color,#6b6570);gap:5px;margin:0;padding-left:20px;font-size:13px;line-height:1.45;display:grid}.mbs-review>button{justify-self:start}.mbs-review-actions,.mbs-card-actions{flex-wrap:wrap;align-items:center;gap:9px;display:flex}.mbs-removal-review{border:1px solid color-mix(in srgb, var(--error-color,#ba1a1a) 35%, var(--divider-color,#dfdae2))}.mbs-danger-button{background:var(--error-color,#ba1a1a)!important}.mbs-quiet-danger-button{color:var(--error-color,#ba1a1a)!important;background:color-mix(in srgb, var(--error-color,#ba1a1a) 10%, transparent)!important}.mbs-content{gap:20px;margin-top:24px;display:grid}.mbs-content section{background:var(--card-background-color,#fff);box-shadow:var(--ha-card-box-shadow,0 2px 2px #0000001a);border-radius:12px;padding:19px}.mbs-section-title{justify-content:space-between;align-items:center;gap:12px;display:flex}.mbs-section-title h2{font-size:18px}.mbs-section-title span{min-width:24px;color:var(--secondary-text-color,#6b6570);background:var(--secondary-background-color,#f4f1f9);justify-content:center;padding:3px 8px;font-size:12px}.mbs-description{color:var(--secondary-text-color,#6b6570);font-size:13px;line-height:1.5;margin-top:5px!important}.mbs-list{gap:10px;margin-top:14px;display:grid}.mbs-card,.mbs-capacity{border:1px solid var(--divider-color,#dfdae2);border-radius:10px;padding:14px}.mbs-card-topline{justify-content:space-between;align-items:flex-start;gap:12px;display:flex}.mbs-route{align-items:center;gap:11px;min-width:0;display:flex}.mbs-route>span{color:var(--primary-color,#006a6a);font-size:20px}.mbs-route strong,.mbs-card strong,.mbs-capacity>strong{color:var(--primary-text-color,#1d1b20)}.mbs-route-label{color:var(--primary-color,#006a6a);background:color-mix(in srgb, var(--primary-color,#006a6a) 12%, transparent);flex:none;padding:4px 9px;font-size:12px;font-weight:700}.mbs-meta{color:var(--secondary-text-color,#6b6570);font-size:12px;line-height:1.45;margin-top:3px!important}.mbs-partial{color:var(--warning-color,#967200);margin:3px 0 0;font-size:12px;line-height:1.45}.mbs-coverage-list{gap:5px;margin-top:10px;display:grid}.mbs-coverage-list strong{color:var(--primary-text-color,#1d1b20)}.mbs-chips,.mbs-members{flex-wrap:wrap;gap:6px;margin-top:12px;display:flex}.mbs-chips span,.mbs-members span{color:var(--primary-text-color,#1d1b20);background:var(--secondary-background-color,#f4f1f9);padding:4px 9px;font-size:12px}.mbs-members span{background:color-mix(in srgb, var(--primary-color,#006a6a) 8%, var(--secondary-background-color,#f4f1f9))}.mbs-capacity-grid{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:14px;display:grid}.mbs-capacity-values{grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;display:grid}.mbs-capacity-values>div{background:var(--secondary-background-color,#f4f1f9);border-radius:7px;padding:8px}.mbs-capacity-values small{color:var(--secondary-text-color,#6b6570);font-size:11px;display:block}.mbs-capacity-values strong{margin-top:3px;font-size:15px;display:block}.mbs-acl-toolbar{flex-wrap:wrap;align-items:end;gap:10px;margin-top:14px;display:flex}.mbs-acl-toolbar label{flex:300px;gap:6px;font-size:13px;font-weight:650;display:grid}.mbs-acl-toolbar select{border:1px solid var(--divider-color,#dfdae2);width:100%;min-height:40px;color:var(--primary-text-color,#1d1b20);background:var(--card-background-color,#fff);font:inherit;border-radius:8px;padding:0 10px}.mbs-acl-toolbar button{min-height:40px;color:var(--text-primary-color,#fff);background:var(--primary-color,#006a6a);cursor:pointer;font:inherit;border:0;border-radius:20px;padding:0 16px;font-weight:650}.mbs-acl-toolbar button:disabled{cursor:not-allowed;opacity:.55}.mbs-acl-capacity{flex-wrap:wrap;gap:8px;margin-top:14px;display:flex}.mbs-acl-capacity span,.mbs-acl-state{color:var(--primary-text-color,#1d1b20);background:var(--secondary-background-color,#f4f1f9);border-radius:999px;align-items:center;padding:4px 9px;font-size:12px;display:inline-flex}.mbs-acl-entry{gap:5px;display:grid}.mbs-acl-details{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:7px;display:grid}.mbs-acl-details>div{background:var(--secondary-background-color,#f4f1f9);border-radius:7px;padding:8px}.mbs-acl-details small{color:var(--secondary-text-color,#6b6570);font-size:11px;display:block}.mbs-acl-details p{font-size:13px;line-height:1.45;margin-top:3px!important}.mbs-acl-protected{color:var(--secondary-text-color,#6b6570)}.mbs-acl-used{color:var(--success-color,#147a3d);background:color-mix(in srgb, var(--success-color,#147a3d) 12%, transparent)}.mbs-acl-unused{color:var(--warning-color,#967200);background:color-mix(in srgb, var(--warning-color,#967200) 12%, transparent)}.mbs-acl-unknown{color:var(--error-color,#ba1a1a);background:color-mix(in srgb, var(--error-color,#ba1a1a) 10%, transparent)}@media (width<=600px){.mbs-panel{padding:14px}.mbs-header{flex-direction:column;align-items:stretch}.mbs-header button{width:100%}.mbs-form-grid{grid-template-columns:1fr}.mbs-actions button,.mbs-review>button,.mbs-review-actions button,.mbs-acl-toolbar button{width:100%}.mbs-card-topline{flex-direction:column;align-items:stretch}.mbs-route-label{align-self:flex-start}}", ye = class extends HTMLElement {
 	root;
 	hassValue;
 	set hass(e) {
@@ -9110,7 +9218,7 @@ var _e = ".mbs-root{min-height:100%;color:var(--primary-text-color,#1d1b20);font
 	connectedCallback() {
 		if (!this.root) {
 			let e = document.createElement("style");
-			e.textContent = _e;
+			e.textContent = ve;
 			let t = document.createElement("div");
 			this.replaceChildren(e, t), this.root = (0, d.createRoot)(t);
 		}
@@ -9123,5 +9231,5 @@ var _e = ".mbs-root{min-height:100%;color:var(--primary-text-color,#1d1b20);font
 		this.root?.render(/* @__PURE__ */ (0, m.jsx)(h, { hass: this.hassValue }));
 	}
 };
-customElements.define("matter-binding-studio-panel", ve);
+customElements.define("matter-binding-studio-panel", ye);
 //#endregion

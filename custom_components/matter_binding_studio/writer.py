@@ -215,6 +215,147 @@ async def async_apply_remove_acl(hass: HomeAssistant, *, plan_id: str) -> dict[s
     }
 
 
+async def async_prepare_cleanup_group(
+    hass: HomeAssistant, *, group_id: int
+) -> dict[str, Any]:
+    """Review cleanup for a Studio-owned group with no remaining Binding."""
+    store = get_managed_group_store(hass)
+    await store.async_load()
+    group = store.get(group_id)
+    if group is None:
+        raise StudioWriteError("This native group is not managed by Matter Binding Studio.")
+    snapshot = await async_get_snapshot(hass)
+    _require_group_is_idle(snapshot, group_id)
+    source = _find_endpoint(
+        snapshot.get("devices", []), group.source_node_id, group.source_endpoint_id
+    )
+    if source is None:
+        raise StudioWriteError("The managed group's source endpoint is no longer available.")
+    members = [
+        _find_endpoint(snapshot.get("devices", []), member["node_id"], member["endpoint_id"])
+        for member in group.members
+    ]
+    if any(member is None for member in members):
+        raise StudioWriteError(
+            "One or more managed group members are no longer available. Keep this group marked for repair."
+        )
+    plan_id = secrets.token_urlsafe(24)
+    _pending_plans(hass)[plan_id] = {
+        "kind": "cleanup_group",
+        "plan_id": plan_id,
+        "created_at": time.monotonic(),
+        "group": group,
+        "source": source,
+        "members": [member for member in members if member is not None],
+    }
+    _purge_expired_plans(hass)
+    return {
+        "plan_id": plan_id,
+        "expires_in_seconds": _PLAN_TTL_SECONDS,
+        "group_id": group.group_id,
+        "name": group.name,
+        "source": source,
+        "members": [member for member in members if member is not None],
+        "clusters": list(group.clusters),
+        "steps": [
+            "Re-read every source Binding table to confirm this group is idle.",
+            "Remove only this group's operate ACL targets from its recorded members.",
+            "Remove this group from its recorded member endpoints and read membership back.",
+            "Remove this group's Group Key mapping and Key Set from every participant.",
+            "Remove Studio metadata only after the native cleanup has verified.",
+        ],
+    }
+
+
+async def async_apply_cleanup_group(
+    hass: HomeAssistant, *, plan_id: str
+) -> dict[str, Any]:
+    """Clean an idle Studio-owned native group with repair-safe sequencing."""
+    plan = _take_plan(hass, plan_id, expected_kind="cleanup_group")
+    group: ManagedGroup = plan["group"]
+    source_key = (group.source_node_id, group.source_endpoint_id)
+    lock = _source_locks(hass).setdefault(source_key, asyncio.Lock())
+    async with lock:
+        store = get_managed_group_store(hass)
+        await store.async_load()
+        current_group = store.get(group.group_id)
+        if current_group is None or current_group != group:
+            raise StudioWriteError(
+                "This managed group changed after review. Refresh and review a new cleanup plan."
+            )
+        snapshot = await async_get_snapshot(hass)
+        _require_group_is_idle(snapshot, group.group_id)
+        client = _require_client(hass)
+        members = list(plan["members"])
+        participant_node_ids = sorted(
+            {group.source_node_id, *(int(member["node_id"]) for member in members)}
+        )
+        try:
+            for member in members:
+                member_clusters = [
+                    cluster
+                    for cluster in group.clusters
+                    if cluster in {int(value) for value in member.get("server_capabilities", [])}
+                ]
+                await _remove_group_acl_grants(
+                    client,
+                    node_id=int(member["node_id"]),
+                    endpoint_id=int(member["endpoint_id"]),
+                    group_id=group.group_id,
+                    clusters=member_clusters,
+                )
+
+            for member in members:
+                await _remove_group_member_if_present(
+                    client,
+                    node_id=int(member["node_id"]),
+                    endpoint_id=int(member["endpoint_id"]),
+                    group_id=group.group_id,
+                )
+
+            for node_id in participant_node_ids:
+                await _remove_group_key_mapping(
+                    client,
+                    node_id=node_id,
+                    group_id=group.group_id,
+                    key_set_id=group.key_set_id,
+                )
+            for node_id in participant_node_ids:
+                await _remove_group_key_set(
+                    client, node_id=node_id, key_set_id=group.key_set_id
+                )
+        except Exception as err:  # noqa: BLE001 - preserve repair record for all partial cleanup
+            _LOGGER.warning("Studio native group cleanup needs repair: %s", err)
+            await store.async_set_status(group.group_id, "repair_needed")
+            return {
+                "success": False,
+                "verified": False,
+                "repair_needed": True,
+                "message": "Native group cleanup stopped before full verification. The recorded group remains available for repair.",
+            }
+
+        await store.async_remove(group.group_id)
+        return {
+            "success": True,
+            "verified": True,
+            "message": "The idle native group, access rules, memberships, and Group Key mapping were cleaned up.",
+            "group_id": group.group_id,
+        }
+
+
+def _require_group_is_idle(snapshot: Mapping[str, Any], group_id: int) -> None:
+    active = [
+        relationship
+        for relationship in snapshot.get("relationships", [])
+        if relationship.get("route") == "native_group"
+        and _optional_int((relationship.get("targets") or {}).get("group_id")) == group_id
+    ]
+    if active:
+        raise StudioWriteError(
+            "Remove every Binding that targets this native group before cleaning it up."
+        )
+
+
 def _node_name_index(devices: list[Mapping[str, Any]]) -> dict[int, str]:
     result: dict[int, str] = {}
     for device in devices:
@@ -1376,6 +1517,62 @@ async def _write_and_verify_group_key_map(
     return False
 
 
+async def _remove_group_key_mapping(
+    client: Any, *, node_id: int, group_id: int, key_set_id: int
+) -> None:
+    """Remove exactly this Studio group's GroupId-to-KeySet mapping."""
+    path = f"0/{CLUSTER_GROUP_KEY_MANAGEMENT}/{ATTR_GROUP_KEY_MAP}"
+    existing = _parse_group_key_map(await _read_attribute(client, node_id, path))
+    matches = [entry for entry in existing if entry["group_id"] == group_id]
+    if not matches:
+        return
+    if any(entry["key_set_id"] != key_set_id for entry in matches):
+        raise StudioWriteError(
+            "The managed Group Key mapping changed and cannot be safely removed."
+        )
+    remaining = [entry for entry in existing if entry["group_id"] != group_id]
+    fabric_index = await _read_fabric_index(client, node_id)
+    for tag_keys in (False, True):
+        payload = [
+            _encode_fabric_struct(entry, _GROUP_KEY_MAP_TAGS, fabric_index, tag_keys)
+            for entry in remaining
+        ]
+        result = await client.write_attribute(
+            node_id=node_id, attribute_path=path, value=payload
+        )
+        if _write_result_failed(result):
+            continue
+        for _ in range(_VERIFY_ATTEMPTS):
+            readback = _parse_group_key_map(await _read_attribute(client, node_id, path))
+            if not any(entry["group_id"] == group_id for entry in readback):
+                return
+            await asyncio.sleep(_VERIFY_DELAY_SECONDS)
+    raise StudioWriteError("A participant did not confirm its Group Key mapping removal.")
+
+
+async def _remove_group_key_set(
+    client: Any, *, node_id: int, key_set_id: int
+) -> None:
+    """Request removal of one private key set after its mapping is gone.
+
+    Epoch key material is deliberately unreadable.  The successful command
+    result is therefore the available device acknowledgement; a non-success
+    result remains repair-needed instead of being interpreted as absent.
+    """
+    from chip.clusters import Objects as clusters
+
+    result = await _send_device_command(
+        client,
+        node_id=node_id,
+        endpoint_id=0,
+        command=clusters.GroupKeyManagement.Commands.KeySetRemove(
+            groupKeySetID=key_set_id
+        ),
+    )
+    if _write_result_failed(result):
+        raise StudioWriteError("A participant rejected Group Key Set removal.")
+
+
 def _encode_fabric_struct(
     entry: Mapping[str, Any],
     tags: Mapping[str, int],
@@ -1423,6 +1620,32 @@ async def _add_group_member(
         client, node_id=node_id, endpoint_id=endpoint_id, group_id=group_id
     ):
         raise StudioWriteError("A selected target did not confirm automatic group membership.")
+
+
+async def _remove_group_member_if_present(
+    client: Any, *, node_id: int, endpoint_id: int, group_id: int
+) -> None:
+    """Remove one member idempotently, then read the GroupTable back."""
+    path = f"0/{CLUSTER_GROUP_KEY_MANAGEMENT}/{ATTR_GROUP_TABLE}"
+    existing = _struct_entries(await _read_attribute(client, node_id, path))
+    if not _group_table_has_member(existing, group_id=group_id, endpoint_id=endpoint_id):
+        return
+    from chip.clusters import Objects as clusters
+
+    result = await _send_device_command(
+        client,
+        node_id=node_id,
+        endpoint_id=endpoint_id,
+        command=clusters.Groups.Commands.RemoveGroup(groupID=group_id),
+    )
+    if _write_result_failed(result):
+        raise StudioWriteError("A managed group member rejected group removal.")
+    for _ in range(_VERIFY_ATTEMPTS):
+        readback = _struct_entries(await _read_attribute(client, node_id, path))
+        if not _group_table_has_member(readback, group_id=group_id, endpoint_id=endpoint_id):
+            return
+        await asyncio.sleep(_VERIFY_DELAY_SECONDS)
+    raise StudioWriteError("A managed group member did not confirm group removal.")
 
 
 async def _verify_group_memberships(
@@ -1512,6 +1735,87 @@ async def _ensure_group_acl(
             return
         await asyncio.sleep(_VERIFY_DELAY_SECONDS)
     raise StudioWriteError("A selected target did not confirm the group access rule.")
+
+
+async def _remove_group_acl_grants(
+    client: Any,
+    *,
+    node_id: int,
+    endpoint_id: int,
+    group_id: int,
+    clusters: list[int],
+) -> None:
+    """Remove only concrete group ACL targets owned by one recorded member."""
+    if not clusters:
+        return
+    entries = await _read_acl(client, node_id)
+    remaining, changed, ambiguous = _without_group_acl_targets(
+        entries,
+        group_id=group_id,
+        endpoint_id=endpoint_id,
+        clusters=set(clusters),
+    )
+    if ambiguous:
+        raise StudioWriteError(
+            "A managed group has a wildcard ACL rule that cannot be safely removed."
+        )
+    if not changed:
+        return
+    await _write_acl(client, node_id, remaining)
+    for _ in range(_VERIFY_ATTEMPTS):
+        verified = await _read_acl(client, node_id)
+        if not any(
+            _acl_grants_group(verified, group_id, endpoint_id, cluster_id)
+            for cluster_id in clusters
+        ):
+            return
+        await asyncio.sleep(_VERIFY_DELAY_SECONDS)
+    raise StudioWriteError("A member did not confirm removal of the group access rule.")
+
+
+def _without_group_acl_targets(
+    entries: list[dict[str, Any]],
+    *,
+    group_id: int,
+    endpoint_id: int,
+    clusters: set[int],
+) -> tuple[list[dict[str, Any]], bool, bool]:
+    """Return ACL table without exact group grants, preserving other targets."""
+    result: list[dict[str, Any]] = []
+    changed = False
+    ambiguous = False
+    for entry in entries:
+        if not (
+            entry["privilege"] < _ACL_PRIVILEGE_ADMINISTER
+            and entry["authMode"] == _ACL_AUTH_MODE_GROUP
+            and entry.get("subjects") == [group_id]
+            and isinstance(entry.get("targets"), list)
+        ):
+            result.append(entry)
+            continue
+        targets = entry["targets"]
+        kept_targets: list[dict[str, Any]] = []
+        entry_changed = False
+        for target in targets:
+            endpoint = target.get("endpoint")
+            cluster = target.get("cluster")
+            if endpoint is None:
+                # A wildcard endpoint could authorize another unrecorded member.
+                ambiguous = True
+                kept_targets.append(target)
+                continue
+            matches_member = endpoint == endpoint_id
+            matches_cluster = cluster is None or cluster in clusters
+            if matches_member and matches_cluster:
+                entry_changed = True
+                changed = True
+                continue
+            kept_targets.append(target)
+        if not entry_changed:
+            result.append(entry)
+        elif kept_targets:
+            result.append({**entry, "targets": kept_targets})
+    return result, changed, ambiguous
 
 
 def _acl_grants_group(

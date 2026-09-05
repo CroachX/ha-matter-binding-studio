@@ -155,6 +155,17 @@ type AclRemovalPlan = {
   steps: string[];
 };
 
+type GroupCleanupPlan = {
+  plan_id: string;
+  expires_in_seconds: number;
+  group_id: number;
+  name: string;
+  source: Endpoint;
+  members: Endpoint[];
+  clusters: number[];
+  steps: string[];
+};
+
 export default function App({ hass }: { hass?: HomeAssistant }) {
   const language = resolveLanguage(hass);
   const t = copy[language];
@@ -637,6 +648,11 @@ function StudioData({
   const [removalWorking, setRemovalWorking] = useState(false);
   const [removalMessage, setRemovalMessage] = useState<string | null>(null);
   const [removalMessageIsError, setRemovalMessageIsError] = useState(false);
+  const [groupCleanupPlan, setGroupCleanupPlan] = useState<GroupCleanupPlan | null>(null);
+  const [groupCleanupConfirmed, setGroupCleanupConfirmed] = useState(false);
+  const [groupCleanupWorking, setGroupCleanupWorking] = useState(false);
+  const [groupCleanupMessage, setGroupCleanupMessage] = useState<string | null>(null);
+  const [groupCleanupMessageIsError, setGroupCleanupMessageIsError] = useState(false);
 
   const reviewRemoval = async (relationship: Relationship) => {
     if (!hass || relationship.source.node_id === null || relationship.source.endpoint_id === null) {
@@ -706,6 +722,55 @@ function StudioData({
       setRemovalRelationship(null);
       setRemovalConfirmed(false);
       setRemovalWorking(false);
+    }
+  };
+
+  const reviewGroupCleanup = async (controlSet: ControlSet) => {
+    if (!hass || !controlSet.managed_by_studio || controlSet.active_relationships > 0) {
+      setGroupCleanupMessage(
+        controlSet.active_relationships > 0 ? t.groupCleanupNeedsBindingRemoval : t.groupCleanupUnavailable,
+      );
+      setGroupCleanupMessageIsError(true);
+      return;
+    }
+    setGroupCleanupWorking(true);
+    setGroupCleanupMessage(null);
+    try {
+      setGroupCleanupPlan(await hass.callWS<GroupCleanupPlan>({
+        type: "matter_binding_studio/prepare_cleanup_group",
+        group_id: controlSet.group_id,
+      }));
+      setGroupCleanupConfirmed(false);
+    } catch (error) {
+      setGroupCleanupMessage(errorMessage(error));
+      setGroupCleanupMessageIsError(true);
+    } finally {
+      setGroupCleanupWorking(false);
+    }
+  };
+
+  const applyGroupCleanup = async () => {
+    if (!hass || !groupCleanupPlan || !groupCleanupConfirmed) return;
+    setGroupCleanupWorking(true);
+    setGroupCleanupMessage(null);
+    try {
+      const result = await hass.callWS<ApplyResult>({
+        type: "matter_binding_studio/apply_cleanup_group",
+        plan_id: groupCleanupPlan.plan_id,
+        confirm: true,
+      });
+      setGroupCleanupMessage(result.message);
+      setGroupCleanupMessageIsError(!result.success || !result.verified);
+      if (result.success && result.verified) {
+        await refresh();
+      }
+    } catch (error) {
+      setGroupCleanupMessage(errorMessage(error));
+      setGroupCleanupMessageIsError(true);
+    } finally {
+      setGroupCleanupPlan(null);
+      setGroupCleanupConfirmed(false);
+      setGroupCleanupWorking(false);
     }
   };
 
@@ -789,27 +854,60 @@ function StudioData({
         {snapshot.native_control_sets.length ? (
           <div className="mbs-list">
             {snapshot.native_control_sets.map((controlSet) => (
-              <article className="mbs-card" key={controlSet.group_id}>
-                <div className="mbs-card-topline">
-                  <strong>{controlSet.name}</strong>
-                  <CapabilityList clusters={controlSet.clusters} t={t} />
-                </div>
-                <p className="mbs-meta">
-                  {controlSet.members.length} {t.members} · {controlSet.active_relationships} {t.activeRelationships}
-                </p>
-                {controlSet.status === "pending" ? (
-                  <p className="mbs-warning">{t.controlSetPending}</p>
-                ) : null}
-                {controlSet.status === "repair_needed" ? (
-                  <p className="mbs-warning">{t.controlSetRepairNeeded}</p>
-                ) : null}
-                <MemberList members={controlSet.members} />
-              </article>
+              <ControlSetRow
+                controlSet={controlSet}
+                key={controlSet.group_id}
+                t={t}
+                onReviewCleanup={reviewGroupCleanup}
+                cleanupWorking={groupCleanupWorking}
+              />
             ))}
           </div>
         ) : (
           <Empty text={t.noControlSets} />
         )}
+        {groupCleanupPlan ? (
+          <div className="mbs-review mbs-removal-review">
+            <strong>{t.groupCleanupReviewTitle}</strong>
+            <p>{groupCleanupPlan.name}</p>
+            <MemberList members={groupCleanupPlan.members} />
+            <CapabilityList clusters={groupCleanupPlan.clusters} t={t} />
+            <ul>{groupCleanupPlan.steps.map((step) => <li key={step}>{step}</li>)}</ul>
+            <label className="mbs-confirm">
+              <input
+                type="checkbox"
+                checked={groupCleanupConfirmed}
+                onChange={(event) => setGroupCleanupConfirmed(event.target.checked)}
+              />
+              {t.confirmGroupCleanup}
+            </label>
+            <div className="mbs-review-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setGroupCleanupPlan(null);
+                  setGroupCleanupConfirmed(false);
+                }}
+                disabled={groupCleanupWorking}
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                className="mbs-danger-button"
+                onClick={() => void applyGroupCleanup()}
+                disabled={!groupCleanupConfirmed || groupCleanupWorking}
+              >
+                {groupCleanupWorking ? t.working : t.cleanupGroup}
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {groupCleanupMessage ? (
+          <p className={groupCleanupMessageIsError ? "mbs-warning" : "mbs-success"}>
+            {groupCleanupMessage}
+          </p>
+        ) : null}
       </section>
 
       <section>
@@ -1142,6 +1240,53 @@ function RelationshipRow({
           {t.reviewRemoval}
         </button>
       </div>
+    </article>
+  );
+}
+
+function ControlSetRow({
+  controlSet,
+  t,
+  onReviewCleanup,
+  cleanupWorking,
+}: {
+  controlSet: ControlSet;
+  t: Copy;
+  onReviewCleanup: (controlSet: ControlSet) => void;
+  cleanupWorking: boolean;
+}) {
+  const canCleanup = Boolean(
+    controlSet.managed_by_studio && controlSet.active_relationships === 0,
+  );
+  return (
+    <article className="mbs-card">
+      <div className="mbs-card-topline">
+        <strong>{controlSet.name}</strong>
+        <CapabilityList clusters={controlSet.clusters} t={t} />
+      </div>
+      <p className="mbs-meta">
+        {controlSet.members.length} {t.members} · {controlSet.active_relationships} {t.activeRelationships}
+      </p>
+      {controlSet.status === "pending" ? (
+        <p className="mbs-warning">{t.controlSetPending}</p>
+      ) : null}
+      {controlSet.status === "repair_needed" ? (
+        <p className="mbs-warning">{t.controlSetRepairNeeded}</p>
+      ) : null}
+      <MemberList members={controlSet.members} />
+      {controlSet.managed_by_studio ? (
+        <div className="mbs-card-actions">
+          <button
+            type="button"
+            className="mbs-quiet-danger-button"
+            onClick={() => onReviewCleanup(controlSet)}
+            disabled={!canCleanup || cleanupWorking}
+          >
+            {t.reviewGroupCleanup}
+          </button>
+          {!canCleanup ? <span className="mbs-meta">{t.groupCleanupNeedsBindingRemoval}</span> : null}
+        </div>
+      ) : null}
     </article>
   );
 }

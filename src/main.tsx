@@ -94,7 +94,17 @@ const previewSnapshot: StudioSnapshot = {
       clusters: [6, 8],
     },
   ],
-  native_control_sets: [],
+  native_control_sets: [
+    {
+      group_id: 32768,
+      name: "Study smart lighting control set",
+      members: [],
+      clusters: [6, 8, 768],
+      active_relationships: 0,
+      managed_by_studio: true,
+      status: "active",
+    },
+  ],
   capacities: [
     {
       node_id: 1001,
@@ -108,6 +118,11 @@ const previewSnapshot: StudioSnapshot = {
   ],
   warnings: [],
 };
+
+previewSnapshot.native_control_sets[0]!.members = [
+  previewSnapshot.devices[1],
+  previewSnapshot.devices[2],
+];
 
 const previewHass: HomeAssistant = {
   locale: { language: "zh-Hant" },
@@ -187,6 +202,29 @@ const previewHass: HomeAssistant = {
         success: true,
         verified: true,
         message: "Preview ACL reclaim completed. No Matter device was changed.",
+      } as T;
+    }
+    if (message.type === "matter_binding_studio/prepare_cleanup_group") {
+      return {
+        plan_id: "preview-group-cleanup",
+        expires_in_seconds: 300,
+        group_id: 32768,
+        name: "Study smart lighting control set",
+        source: previewSnapshot.devices[0],
+        members: [previewSnapshot.devices[1], previewSnapshot.devices[2]],
+        clusters: [6, 8, 768],
+        steps: [
+          "Preview only — no group state will be changed.",
+          "The group membership and Binding table would be read back after cleanup.",
+        ],
+      } as T;
+    }
+    if (message.type === "matter_binding_studio/apply_cleanup_group") {
+      previewSnapshot.native_control_sets = [];
+      return {
+        success: true,
+        verified: true,
+        message: "Preview native group cleanup completed. No Matter device was changed.",
       } as T;
     }
     const clusters = Array.isArray(message.clusters)
