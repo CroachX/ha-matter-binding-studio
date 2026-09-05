@@ -9,7 +9,7 @@ family-facing controls.
 
 ## Current scope: reviewed native bindings and automatic groups
 
-Version `0.3.0` reads the existing Matter fabric and presents:
+Version `0.4.0` reads the existing Matter fabric and presents:
 
 - endpoint-backed Home Assistant names, including bridged functional endpoints
 - existing Binding Cluster relationships, shown as direct or native-group routes
