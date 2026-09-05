@@ -194,6 +194,7 @@
 .mbs-route > span { color: var(--primary-color, #006a6a); font-size: 20px; }
 .mbs-route strong, .mbs-card strong, .mbs-capacity > strong { color: var(--primary-text-color, #1d1b20); }
 .mbs-route-label { flex: 0 0 auto; padding: 4px 9px; color: var(--primary-color, #006a6a); background: color-mix(in srgb, var(--primary-color, #006a6a) 12%, transparent); font-size: 12px; font-weight: 700; }
+.mbs-relationship-actions { flex: 0 0 auto; flex-direction: column; align-items: flex-end; }
 .mbs-meta { margin-top: 3px !important; color: var(--secondary-text-color, #6b6570); font-size: 12px; line-height: 1.45; }
 .mbs-partial { margin: 3px 0 0; color: var(--warning-color, #967200); font-size: 12px; line-height: 1.45; }
 .mbs-coverage-list { display: grid; gap: 5px; margin-top: 10px; }
@@ -239,4 +240,5 @@
   .mbs-acl-toolbar button { width: 100%; }
   .mbs-card-topline { align-items: stretch; flex-direction: column; }
   .mbs-route-label { align-self: flex-start; }
+  .mbs-relationship-actions { align-self: flex-start; align-items: flex-start; }
 }

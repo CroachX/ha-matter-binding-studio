@@ -1224,22 +1224,22 @@ function RelationshipRow({
             ) : null}
           </div>
         </div>
-        <span className="mbs-route-label">
-          {relationship.route === "native_group" ? t.nativeGroup : t.direct}
-        </span>
+        <div className="mbs-card-actions mbs-relationship-actions">
+          <span className="mbs-route-label">
+            {relationship.route === "native_group" ? t.nativeGroup : t.direct}
+          </span>
+          <button
+            type="button"
+            className="mbs-quiet-danger-button"
+            onClick={() => onReviewRemoval(relationship)}
+            disabled={removalWorking}
+          >
+            {t.reviewRemoval}
+          </button>
+        </div>
       </div>
       <CapabilityList clusters={relationship.clusters} t={t} />
       {relationship.route === "native_group" ? <MemberList members={members} /> : null}
-      <div className="mbs-card-actions">
-        <button
-          type="button"
-          className="mbs-quiet-danger-button"
-          onClick={() => onReviewRemoval(relationship)}
-          disabled={removalWorking}
-        >
-          {t.reviewRemoval}
-        </button>
-      </div>
     </article>
   );
 }
