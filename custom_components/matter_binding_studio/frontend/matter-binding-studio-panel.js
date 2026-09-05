@@ -8437,7 +8437,7 @@ function y(e, t) {
 	return v.compare(e.area_name ?? "", t.area_name ?? "") || v.compare(e.node_name ?? "", t.node_name ?? "") || v.compare(e.name, t.name) || (e.node_id ?? 2 ** 53 - 1) - (t.node_id ?? 2 ** 53 - 1) || (e.endpoint_id ?? 2 ** 53 - 1) - (t.endpoint_id ?? 2 ** 53 - 1);
 }
 function b(e) {
-	let t = e.area_name?.trim() || "", n = ee(e.name.trim(), t), r = x(e, n), i = t ? `${t} - ` : "";
+	let t = e.area_name?.trim() || "", n = e.name.trim(), r = x(e, n), i = t ? `${t} - ` : "";
 	return r ? `${i}${r} · ${n}` : `${i}${n}`;
 }
 function x(e, t) {

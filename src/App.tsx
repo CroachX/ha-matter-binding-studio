@@ -461,7 +461,9 @@ function compareEndpoints(left: Endpoint, right: Endpoint): number {
 
 function endpointLabel(endpoint: Endpoint): string {
   const area = endpoint.area_name?.trim() || "";
-  const name = stripAreaPrefix(endpoint.name.trim(), area);
+  // `name` is the user-facing HA entity name. Keep it intact: an area prefix
+  // can be meaningful when one controller exposes endpoints for multiple rooms.
+  const name = endpoint.name.trim();
   const deviceLayer = endpointDeviceLayer(endpoint, name);
   const prefix = area ? `${area} - ` : "";
   return deviceLayer ? `${prefix}${deviceLayer} · ${name}` : `${prefix}${name}`;
