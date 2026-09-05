@@ -70,6 +70,7 @@ type UnicastPlan = {
   clusters: number[];
   existing_binding_count: number;
   acl: "will_add" | "already_granted";
+  acl_capacity?: AclCapacity;
   steps: string[];
 };
 
@@ -82,6 +83,7 @@ type GroupcastPlan = {
   clusters: number[];
   coverage: CapabilityCoverage[];
   replaces_direct_binding: boolean;
+  acl_capacity?: Array<AclCapacity & { target: Endpoint }>;
   steps: string[];
 };
 
@@ -110,6 +112,38 @@ type RemovalPlan = {
   removed_entry_count: number;
   keeps_native_group: boolean;
   steps: string[];
+};
+
+type AclCapacity = {
+  used: number | null;
+  maximum: number | null;
+  available: number | null;
+  targets_per_entry: number | null;
+  entries_to_add?: number;
+};
+
+type AclTarget = {
+  endpoint: string;
+  capability: string;
+};
+
+type AclEntry = {
+  entry_index: number;
+  kind: "administrator" | "operate";
+  auth_mode: "case" | "group" | "other";
+  subjects: string[];
+  targets: AclTarget[];
+  usage: {
+    state: "protected" | "used" | "unused" | "unknown";
+    relationship_names: string[];
+    safe_to_reclaim: boolean;
+  };
+};
+
+type AclOverview = {
+  target: Endpoint;
+  capacity: AclCapacity;
+  entries: AclEntry[];
 };
 
 export default function App({ hass }: { hass?: HomeAssistant }) {
@@ -434,6 +468,9 @@ function BindingComposer({
               ? (plan.acl === "will_add" ? t.aclWillAdd : t.aclAlreadyGranted)
               : t.groupAclReview}
           </p>
+          {plan.route === "direct" && plan.acl_capacity ? (
+            <AclCapacitySummary capacity={plan.acl_capacity} t={t} />
+          ) : null}
           <label className="mbs-confirm">
             <input
               type="checkbox"
@@ -539,6 +576,10 @@ function coverageLabel(coverage: CapabilityCoverage | undefined, t: Copy): strin
   if (!coverage) return "";
   const status = coverage.supported_members === coverage.total_members ? t.coverageReady : t.coveragePartial;
   return `${coverage.supported_members} / ${coverage.total_members} ${status}`;
+}
+
+function formatCount(template: string, count: number): string {
+  return template.replace("{count}", String(count));
 }
 
 function sameLabel(left: string, right: string): boolean {
@@ -731,6 +772,8 @@ function StudioData({
         ) : null}
       </section>
 
+      <AclInspector hass={hass} snapshot={snapshot} t={t} />
+
       <section>
         <SectionTitle title={t.controlSets} count={snapshot.native_control_sets.length} />
         <p className="mbs-description">{t.controlSetsDescription}</p>
@@ -789,6 +832,140 @@ function StudioData({
           ))}
         </div>
       </section>
+    </div>
+  );
+}
+
+function AclInspector({
+  hass,
+  snapshot,
+  t,
+}: {
+  hass?: HomeAssistant;
+  snapshot: StudioSnapshot;
+  t: Copy;
+}) {
+  const targets = snapshot.devices
+    .filter((device) => device.can_be_target && device.node_id !== null && device.endpoint_id !== null)
+    .sort(compareEndpoints);
+  const [targetKey, setTargetKey] = useState("");
+  const [overview, setOverview] = useState<AclOverview | null>(null);
+  const [working, setWorking] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const selectedTarget = targets.find((target) => endpointKey(target) === targetKey);
+
+  const readAcl = async () => {
+    if (!hass || !selectedTarget || selectedTarget.node_id === null || selectedTarget.endpoint_id === null) return;
+    setWorking(true);
+    setFailed(false);
+    try {
+      setOverview(await hass.callWS<AclOverview>({
+        type: "matter_binding_studio/get_acl_overview",
+        target_node_id: selectedTarget.node_id,
+        target_endpoint_id: selectedTarget.endpoint_id,
+      }));
+    } catch {
+      setFailed(true);
+      setOverview(null);
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  return (
+    <section>
+      <SectionTitle title={t.acl} count={overview?.entries.length ?? 0} />
+      <p className="mbs-description">{t.aclDescription}</p>
+      <div className="mbs-acl-toolbar">
+        <label>
+          <span>{t.target}</span>
+          <select
+            value={targetKey}
+            onChange={(event) => {
+              setTargetKey(event.target.value);
+              setOverview(null);
+              setFailed(false);
+            }}
+          >
+            <option value="" disabled>{t.chooseAclTarget}</option>
+            {targets.map((target) => (
+              <option key={endpointKey(target)} value={endpointKey(target)}>
+                {endpointLabel(target)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          onClick={() => void readAcl()}
+          disabled={!hass || !selectedTarget || working}
+        >
+          {working ? t.readingAcl : t.readAcl}
+        </button>
+      </div>
+      {failed ? <p className="mbs-warning">{t.aclReadFailed}</p> : null}
+      {overview ? (
+        <>
+          <AclCapacitySummary capacity={overview.capacity} t={t} />
+          <div className="mbs-list">
+            {overview.entries.map((entry) => <AclEntryRow entry={entry} key={entry.entry_index} t={t} />)}
+          </div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function AclEntryRow({ entry, t }: { entry: AclEntry; t: Copy }) {
+  const kind = entry.kind === "administrator" ? t.aclAdministrator : t.aclOperate;
+  const authMode = entry.auth_mode === "case"
+    ? t.aclCase
+    : entry.auth_mode === "group"
+      ? t.aclGroup
+      : t.aclOther;
+  const usage = entry.usage.state === "protected"
+    ? t.aclProtected
+    : entry.usage.state === "used"
+      ? t.aclInUse
+      : entry.usage.state === "unused"
+        ? t.aclUnused
+        : t.aclUnknown;
+  return (
+    <article className="mbs-card mbs-acl-entry">
+      <div className="mbs-card-topline">
+        <strong>{kind}</strong>
+        <span className={`mbs-acl-state mbs-acl-${entry.usage.state}`}>{usage}</span>
+      </div>
+      <p className="mbs-meta">{authMode}</p>
+      <div className="mbs-acl-details">
+        <div>
+          <small>{t.aclSubjects}</small>
+          <p>{entry.subjects.join(", ")}</p>
+        </div>
+        <div>
+          <small>{t.aclTargets}</small>
+          <p>{entry.targets.map((target) => `${target.endpoint} · ${target.capability}`).join("；")}</p>
+        </div>
+      </div>
+      {entry.usage.relationship_names.length ? (
+        <p className="mbs-meta">{entry.usage.relationship_names.join("；")}</p>
+      ) : null}
+    </article>
+  );
+}
+
+function AclCapacitySummary({ capacity, t }: { capacity: AclCapacity; t: Copy }) {
+  const used = capacity.used ?? "–";
+  const maximum = capacity.maximum ?? t.unavailable;
+  const available = capacity.available ?? "–";
+  return (
+    <div className="mbs-acl-capacity" aria-label={t.acl}>
+      <span>{t.aclUsed}: <strong>{used} / {maximum}</strong></span>
+      <span>{t.aclAvailable}: <strong>{available}</strong></span>
+      <span>{t.aclTargetsPerRule}: <strong>{capacity.targets_per_entry ?? t.unavailable}</strong></span>
+      {capacity.entries_to_add ? (
+        <span>{formatCount(t.aclWillAddEntries, capacity.entries_to_add)}</span>
+      ) : null}
     </div>
   );
 }

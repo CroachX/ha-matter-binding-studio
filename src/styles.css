@@ -207,12 +207,36 @@
 .mbs-capacity-values small { display: block; color: var(--secondary-text-color, #6b6570); font-size: 11px; }
 .mbs-capacity-values strong { display: block; margin-top: 3px; font-size: 15px; }
 
+.mbs-acl-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  margin-top: 14px;
+}
+.mbs-acl-toolbar label { display: grid; flex: 1 1 300px; gap: 6px; font-size: 13px; font-weight: 650; }
+.mbs-acl-toolbar select { width: 100%; min-height: 40px; padding: 0 10px; border: 1px solid var(--divider-color, #dfdae2); border-radius: 8px; color: var(--primary-text-color, #1d1b20); background: var(--card-background-color, #fff); font: inherit; }
+.mbs-acl-toolbar button { min-height: 40px; padding: 0 16px; border: 0; border-radius: 20px; color: var(--text-primary-color, #fff); background: var(--primary-color, #006a6a); cursor: pointer; font: inherit; font-weight: 650; }
+.mbs-acl-toolbar button:disabled { cursor: not-allowed; opacity: .55; }
+.mbs-acl-capacity { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.mbs-acl-capacity span, .mbs-acl-state { display: inline-flex; align-items: center; padding: 4px 9px; border-radius: 999px; color: var(--primary-text-color, #1d1b20); background: var(--secondary-background-color, #f4f1f9); font-size: 12px; }
+.mbs-acl-entry { display: grid; gap: 5px; }
+.mbs-acl-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 7px; }
+.mbs-acl-details > div { padding: 8px; border-radius: 7px; background: var(--secondary-background-color, #f4f1f9); }
+.mbs-acl-details small { display: block; color: var(--secondary-text-color, #6b6570); font-size: 11px; }
+.mbs-acl-details p { margin-top: 3px !important; font-size: 13px; line-height: 1.45; }
+.mbs-acl-protected { color: var(--secondary-text-color, #6b6570); }
+.mbs-acl-used { color: var(--success-color, #147a3d); background: color-mix(in srgb, var(--success-color, #147a3d) 12%, transparent); }
+.mbs-acl-unused { color: var(--warning-color, #967200); background: color-mix(in srgb, var(--warning-color, #967200) 12%, transparent); }
+.mbs-acl-unknown { color: var(--error-color, #ba1a1a); background: color-mix(in srgb, var(--error-color, #ba1a1a) 10%, transparent); }
+
 @media (max-width: 600px) {
   .mbs-panel { padding: 14px; }
   .mbs-header { align-items: stretch; flex-direction: column; }
   .mbs-header button { width: 100%; }
   .mbs-form-grid { grid-template-columns: 1fr; }
   .mbs-actions button, .mbs-review > button, .mbs-review-actions button { width: 100%; }
+  .mbs-acl-toolbar button { width: 100%; }
   .mbs-card-topline { align-items: stretch; flex-direction: column; }
   .mbs-route-label { align-self: flex-start; }
 }

@@ -16,11 +16,21 @@ Version `0.3.0` reads the existing Matter fabric and presents:
 - cached native Matter group membership where devices expose it
 - cached Group and Group Key capacity without exposing any key material.
 
+The **Target ACL** section reads one selected output endpoint on demand. It
+shows the device-reported ACL capacity, administrator and operate rules, named
+sources and endpoints, and whether a rule can be matched to a currently known
+native Binding. It deliberately does not query every target whenever the
+Fabric refreshes.
+
 It can create a **single-target native unicast** relationship after a reviewed
 plan and explicit confirmation. The transaction reads the current source
 Binding list and target ACL, adds only the needed target access entry, writes
 the Binding list, then reads the Binding Cluster back. If the binding cannot
 be verified, Studio reports that state rather than claiming success.
+
+Before any unicast or groupcast provisioning begins, Studio also checks the
+target ACL's reported entry capacity. A known-full ACL is rejected during plan
+review, before any Binding, Group Key, or group-membership write is attempted.
 
 When two or more targets are selected, Studio chooses groupcast automatically.
 It allocates a dedicated application Group ID and Group Key set, provisions the

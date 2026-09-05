@@ -308,6 +308,21 @@ Diagnostics remain available but never drive the normal authoring flow:
 - last read-back result and timestamp
 - separate delete/repair actions with confirmation
 
+### 6.6 Target ACL inspection and preflight
+
+Access Control is a target-device concern, so it is read only when an operator
+selects a target endpoint. The normal Fabric refresh never loops through every
+device ACL. The ACL view shows entry capacity, administrator and operate
+rules, named source/group subjects, target endpoints and capabilities, and a
+best-effort reference to a current native Binding. A rule without a concrete
+source and target is never treated as safe to reclaim.
+
+Every reviewed unicast or groupcast plan reads the reported
+`AccessControlEntriesPerFabric` limit where available. If the planned
+cluster-specific grants would exceed that known limit, planning fails before
+any Matter write. An unavailable capacity attribute is presented as unknown;
+it is not silently interpreted as zero.
+
 ## 7. Safety rules
 
 - Discovery is read-only.

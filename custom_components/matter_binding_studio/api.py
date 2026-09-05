@@ -14,6 +14,7 @@ from .const import (
     DOMAIN,
     WS_TYPE_APPLY_UNICAST,
     WS_TYPE_GET_SNAPSHOT,
+    WS_TYPE_GET_ACL_OVERVIEW,
     WS_TYPE_PREPARE_GROUPCAST,
     WS_TYPE_PREPARE_REMOVE_BINDING,
     WS_TYPE_PREPARE_UNICAST,
@@ -21,6 +22,7 @@ from .const import (
 from .matter import async_get_snapshot
 from .writer import (
     StudioWriteError,
+    async_get_acl_overview,
     async_apply_groupcast,
     async_apply_remove_binding,
     async_apply_unicast,
@@ -36,6 +38,7 @@ async def async_setup(hass: HomeAssistant) -> None:
     if domain_data.get("_ws_registered"):
         return
     websocket_api.async_register_command(hass, ws_get_snapshot)
+    websocket_api.async_register_command(hass, ws_get_acl_overview)
     websocket_api.async_register_command(hass, ws_prepare_unicast)
     websocket_api.async_register_command(hass, ws_apply_unicast)
     websocket_api.async_register_command(hass, ws_prepare_groupcast)
@@ -54,6 +57,37 @@ async def ws_get_snapshot(
 ) -> None:
     """Return a native-Matter read model without changing the fabric."""
     connection.send_result(msg["id"], await async_get_snapshot(hass))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_GET_ACL_OVERVIEW,
+        vol.Required("target_node_id"): vol.Coerce(int),
+        vol.Required("target_endpoint_id"): vol.Coerce(int),
+    }
+)
+@websocket_api.async_response
+async def ws_get_acl_overview(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Read one selected target's ACL without changing the Matter fabric."""
+    if not _is_admin(connection):
+        connection.send_error(
+            msg["id"], "forbidden", "Matter Binding Studio is admin-only."
+        )
+        return
+    try:
+        overview = await async_get_acl_overview(
+            hass,
+            target_node_id=msg["target_node_id"],
+            target_endpoint_id=msg["target_endpoint_id"],
+        )
+    except StudioWriteError as err:
+        connection.send_error(msg["id"], "acl_read_failed", str(err))
+        return
+    connection.send_result(msg["id"], overview)
 
 
 @websocket_api.websocket_command(

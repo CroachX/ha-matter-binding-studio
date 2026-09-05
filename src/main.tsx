@@ -115,6 +115,45 @@ const previewHass: HomeAssistant = {
     if (message.type === "matter_binding_studio/get_snapshot") {
       return previewSnapshot as T;
     }
+    if (message.type === "matter_binding_studio/get_acl_overview") {
+      const target = previewSnapshot.devices.find((device) =>
+        device.node_id === message.target_node_id && device.endpoint_id === message.target_endpoint_id,
+      );
+      return {
+        target,
+        capacity: {
+          used: 2,
+          maximum: 4,
+          available: 2,
+          targets_per_entry: 3,
+        },
+        entries: [
+          {
+            entry_index: 0,
+            kind: "administrator",
+            auth_mode: "case",
+            subjects: ["Home Assistant"],
+            targets: [{ endpoint: "All endpoints", capability: "All capabilities" }],
+            usage: { state: "protected", relationship_names: [], safe_to_reclaim: false },
+          },
+          {
+            entry_index: 1,
+            kind: "operate",
+            auth_mode: "case",
+            subjects: ["Study - Multi Function Switch"],
+            targets: [
+              { endpoint: "Study - Smart light", capability: "On / Off" },
+              { endpoint: "Study - Smart light", capability: "Brightness" },
+            ],
+            usage: {
+              state: "used",
+              relationship_names: ["Smart light → Smart light"],
+              safe_to_reclaim: false,
+            },
+          },
+        ],
+      } as T;
+    }
     const clusters = Array.isArray(message.clusters)
       ? message.clusters.map(Number)
       : [];
@@ -130,6 +169,13 @@ const previewHass: HomeAssistant = {
         clusters,
         existing_binding_count: 0,
         acl: "will_add",
+        acl_capacity: {
+          used: 2,
+          maximum: 4,
+          available: 2,
+          targets_per_entry: 3,
+          entries_to_add: clusters.length,
+        },
         steps: ["Preview only — no device will be changed."],
       } as T;
     }

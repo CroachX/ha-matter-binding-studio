@@ -19,10 +19,12 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     ATTR_ACL,
+    ATTR_ACCESS_CONTROL_ENTRIES_PER_FABRIC,
     ATTR_BINDING,
     ATTR_CURRENT_FABRIC_INDEX,
     ATTR_GROUP_KEY_MAP,
     ATTR_GROUP_TABLE,
+    ATTR_TARGETS_PER_ACCESS_CONTROL_ENTRY,
     CLUSTER_ACCESS_CONTROL,
     CLUSTER_BINDING,
     CLUSTER_GROUP_KEY_MANAGEMENT,
@@ -53,6 +55,241 @@ _GROUP_NAME_MAX_LENGTH = 16
 
 class StudioWriteError(RuntimeError):
     """A user-safe write transaction error."""
+
+
+async def async_get_acl_overview(
+    hass: HomeAssistant,
+    *,
+    target_node_id: int,
+    target_endpoint_id: int,
+) -> dict[str, Any]:
+    """Return one target's ACL with named, Binding-aware safe diagnostics.
+
+    This intentionally reads one operator-selected target rather than making
+    every Fabric refresh query every device's Access Control cluster.  The
+    response has no key material and keeps raw Matter identifiers out of the
+    normal UI while retaining the table index required for a later reviewed
+    cleanup transaction.
+    """
+    snapshot = await async_get_snapshot(hass)
+    target = _find_endpoint(
+        snapshot.get("devices", []), target_node_id, target_endpoint_id
+    )
+    if target is None or not target.get("can_be_target"):
+        raise StudioWriteError("Choose a valid Matter output target.")
+    client = _require_client(hass)
+    entries = await _read_acl(client, target_node_id)
+    capacity = await _read_acl_capacity(client, target_node_id, entries)
+    endpoint_names = {
+        int(endpoint["endpoint_id"]): _endpoint_presentation_name(endpoint)
+        for endpoint in snapshot.get("devices", [])
+        if endpoint.get("node_id") == target_node_id
+        and endpoint.get("endpoint_id") is not None
+    }
+    node_names = _node_name_index(snapshot.get("devices", []))
+    group_names = {
+        int(group["group_id"]): str(group.get("name") or "Native group")
+        for group in snapshot.get("native_control_sets", [])
+    }
+    return {
+        "target": target,
+        "capacity": _public_acl_capacity(capacity),
+        "entries": [
+            _public_acl_entry(
+                entry,
+                index=index,
+                target_node_id=target_node_id,
+                endpoint_names=endpoint_names,
+                node_names=node_names,
+                group_names=group_names,
+                relationships=snapshot.get("relationships", []),
+            )
+            for index, entry in enumerate(entries)
+        ],
+    }
+
+
+def _node_name_index(devices: list[Mapping[str, Any]]) -> dict[int, str]:
+    result: dict[int, str] = {}
+    for device in devices:
+        node_id = _optional_int(device.get("node_id"))
+        name = str(device.get("node_name") or "").strip()
+        if node_id is not None and name:
+            result.setdefault(node_id, name)
+    return result
+
+
+def _endpoint_presentation_name(endpoint: Mapping[str, Any]) -> str:
+    area = str(endpoint.get("area_name") or "").strip()
+    name = str(endpoint.get("name") or "Matter endpoint").strip()
+    return f"{area} - {name}" if area else name
+
+
+def _public_acl_entry(
+    entry: Mapping[str, Any],
+    *,
+    index: int,
+    target_node_id: int,
+    endpoint_names: Mapping[int, str],
+    node_names: Mapping[int, str],
+    group_names: Mapping[int, str],
+    relationships: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    privilege = int(entry["privilege"])
+    auth_mode = int(entry["authMode"])
+    relationship_names = _acl_relationship_names(
+        entry, target_node_id=target_node_id, relationships=relationships
+    )
+    subjects = entry.get("subjects")
+    concrete_subjects = isinstance(subjects, list) and bool(subjects)
+    concrete_targets = isinstance(entry.get("targets"), list)
+    protected = privilege >= _ACL_PRIVILEGE_ADMINISTER
+    safe_to_reclaim = (
+        not protected
+        and not relationship_names
+        and concrete_subjects
+        and concrete_targets
+    )
+    return {
+        "entry_index": index,
+        "kind": "administrator" if protected else "operate",
+        "auth_mode": _acl_auth_mode_label(auth_mode),
+        "subjects": _acl_subject_labels(
+            subjects, auth_mode=auth_mode, node_names=node_names, group_names=group_names
+        ),
+        "targets": _acl_target_labels(entry.get("targets"), endpoint_names),
+        "usage": {
+            "state": (
+                "protected"
+                if protected
+                else "used"
+                if relationship_names
+                else "unused"
+                if safe_to_reclaim
+                else "unknown"
+            ),
+            "relationship_names": relationship_names,
+            "safe_to_reclaim": safe_to_reclaim,
+        },
+    }
+
+
+def _acl_auth_mode_label(auth_mode: int) -> str:
+    if auth_mode == _ACL_AUTH_MODE_CASE:
+        return "case"
+    if auth_mode == _ACL_AUTH_MODE_GROUP:
+        return "group"
+    return "other"
+
+
+def _acl_subject_labels(
+    subjects: Any,
+    *,
+    auth_mode: int,
+    node_names: Mapping[int, str],
+    group_names: Mapping[int, str],
+) -> list[str]:
+    if not isinstance(subjects, list) or not subjects:
+        return ["All subjects"]
+    labels: list[str] = []
+    for subject in subjects:
+        subject_id = _optional_int(subject)
+        if subject_id is None:
+            labels.append("Unknown subject")
+        elif auth_mode == _ACL_AUTH_MODE_GROUP:
+            labels.append(group_names.get(subject_id, "Unknown native group"))
+        else:
+            labels.append(node_names.get(subject_id, "Unknown Matter node"))
+    return labels
+
+
+def _acl_target_labels(
+    targets: Any, endpoint_names: Mapping[int, str]
+) -> list[dict[str, str]]:
+    if not isinstance(targets, list) or not targets:
+        return [{"endpoint": "All endpoints", "capability": "All capabilities"}]
+    labels: list[dict[str, str]] = []
+    for target in targets:
+        endpoint_id = _optional_int(target.get("endpoint")) if isinstance(target, Mapping) else None
+        cluster_id = _optional_int(target.get("cluster")) if isinstance(target, Mapping) else None
+        labels.append(
+            {
+                "endpoint": endpoint_names.get(endpoint_id, "All endpoints")
+                if endpoint_id is not None
+                else "All endpoints",
+                "capability": _cluster_label(cluster_id),
+            }
+        )
+    return labels
+
+
+def _cluster_label(cluster_id: int | None) -> str:
+    return {
+        6: "On / Off",
+        8: "Brightness",
+        768: "Color temperature",
+    }.get(cluster_id, "All capabilities" if cluster_id is None else "Other capability")
+
+
+def _acl_relationship_names(
+    entry: Mapping[str, Any],
+    *,
+    target_node_id: int,
+    relationships: list[Mapping[str, Any]],
+) -> list[str]:
+    names: list[str] = []
+    for relationship in relationships:
+        source = relationship.get("source") or {}
+        source_node_id = _optional_int(source.get("node_id"))
+        route = relationship.get("route")
+        clusters = [int(cluster) for cluster in relationship.get("clusters", [])]
+        targets = relationship.get("targets") or {}
+        members = targets.get("members") or []
+        if route == "direct":
+            if source_node_id is None:
+                continue
+            relevant_members = [
+                member
+                for member in members
+                if _optional_int(member.get("node_id")) == target_node_id
+            ]
+            if any(
+                _acl_grants_case(
+                    [dict(entry)],
+                    source_node_id,
+                    int(member["endpoint_id"]),
+                    cluster_id,
+                )
+                for member in relevant_members
+                for cluster_id in clusters
+            ):
+                names.append(_relationship_presentation_name(relationship))
+        elif route == "native_group":
+            group_id = _optional_int(targets.get("group_id"))
+            if group_id is None:
+                continue
+            relevant_members = [
+                member
+                for member in members
+                if _optional_int(member.get("node_id")) == target_node_id
+            ]
+            if any(
+                _acl_grants_group(
+                    [dict(entry)], group_id, int(member["endpoint_id"]), cluster_id
+                )
+                for member in relevant_members
+                for cluster_id in clusters
+            ):
+                names.append(_relationship_presentation_name(relationship))
+    return list(dict.fromkeys(names))
+
+
+def _relationship_presentation_name(relationship: Mapping[str, Any]) -> str:
+    source = relationship.get("source") or {}
+    source_name = str(source.get("name") or "Matter control")
+    targets = relationship.get("targets") or {}
+    target_name = str(targets.get("name") or "Matter target")
+    return f"{source_name} → {target_name}"
 
 
 async def async_prepare_unicast(
@@ -90,12 +327,12 @@ async def async_prepare_unicast(
             "The target ACL cannot be safely updated because no administrator entry was found."
         )
 
-    acl_needed = any(
-        not _acl_grants_case(
-            acl_entries, source_node_id, target_endpoint_id, cluster_id
-        )
-        for cluster_id in selected_clusters
+    required_acl_clusters = _required_case_acl_clusters(
+        acl_entries, source_node_id, target_endpoint_id, selected_clusters
     )
+    acl_capacity = await _read_acl_capacity(client, target_node_id, acl_entries)
+    _require_acl_capacity(acl_capacity, len(required_acl_clusters))
+    acl_needed = bool(required_acl_clusters)
     plan_id = secrets.token_urlsafe(24)
     plan = {
         "plan_id": plan_id,
@@ -105,6 +342,7 @@ async def async_prepare_unicast(
         "clusters": selected_clusters,
         "bindings_before": bindings,
         "acl_needed": acl_needed,
+        "acl_capacity": acl_capacity,
     }
     _pending_plans(hass)[plan_id] = plan
     _purge_expired_plans(hass)
@@ -117,8 +355,11 @@ async def async_prepare_unicast(
         "clusters": selected_clusters,
         "existing_binding_count": len(bindings),
         "acl": "will_add" if acl_needed else "already_granted",
+        "acl_capacity": _public_acl_capacity(
+            acl_capacity, entries_to_add=len(required_acl_clusters)
+        ),
         "steps": [
-            "Read the latest Binding and ACL lists.",
+            "Read the latest Binding list and target ACL capacity.",
             *(
                 ["Grant the source device operate access on the target."]
                 if acl_needed
@@ -168,6 +409,8 @@ async def async_apply_unicast(hass: HomeAssistant, *, plan_id: str) -> dict[str,
                 raise StudioWriteError(
                     "The target ACL changed and is no longer safe to update. Review a new plan."
                 )
+            acl_capacity = await _read_acl_capacity(client, target_node_id, current_acl)
+            _require_acl_capacity(acl_capacity, len(required_acl_clusters))
             acl_payload = list(current_acl)
             acl_payload.extend(
                 _new_case_acl(source_node_id, target_endpoint_id, cluster_id)
@@ -284,6 +527,9 @@ async def async_prepare_groupcast(
         clusters=selected_clusters,
         status="pending",
     )
+    acl_capacity = await _preflight_group_acl_capacity(
+        client, members=members, group_id=group.group_id, clusters=selected_clusters
+    )
     coverage = _group_capability_coverage(source, members, selected_clusters)
     replaced_direct_entries = _matching_direct_entries(
         source_bindings, members, selected_clusters
@@ -300,6 +546,7 @@ async def async_prepare_groupcast(
         "capacity": capacity,
         "group": group,
         "replaced_direct_entries": replaced_direct_entries,
+        "acl_capacity": acl_capacity,
     }
     _purge_expired_plans(hass)
     return {
@@ -311,8 +558,13 @@ async def async_prepare_groupcast(
         "clusters": selected_clusters,
         "coverage": coverage,
         "replaces_direct_binding": bool(replaced_direct_entries),
+        "acl_capacity": [
+            _public_acl_capacity(item["capacity"], entries_to_add=item["entries_to_add"])
+            | {"target": item["target"]}
+            for item in acl_capacity
+        ],
         "steps": [
-            "Read the latest Binding, group capacity, and group key maps.",
+            "Read the latest Binding, ACL, group capacity, and group key maps.",
             "Provision one new Group Key on the control source and each target device.",
             "Add each selected target endpoint to the automatic native group.",
             "Grant group operate access only to member endpoints that support each selected capability.",
@@ -357,6 +609,9 @@ async def async_apply_groupcast(hass: HomeAssistant, *, plan_id: str) -> dict[st
             raise StudioWriteError(
                 "The automatic Group Key slot was claimed after review. Refresh and review a new plan."
             )
+        await _preflight_group_acl_capacity(
+            client, members=members, group_id=group.group_id, clusters=clusters
+        )
 
         store = get_managed_group_store(hass)
         await store.async_load()
@@ -755,6 +1010,39 @@ def _automatic_group_name(source: Mapping[str, Any]) -> str:
     return f"{area} {name} control set".strip()
 
 
+async def _preflight_group_acl_capacity(
+    client: Any,
+    *,
+    members: list[Mapping[str, Any]],
+    group_id: int,
+    clusters: list[int],
+) -> list[dict[str, Any]]:
+    """Check ACL entry capacity before any Group Key or membership write.
+
+    Group provisioning previously discovered a full member ACL only after it
+    had written Group Key and membership state.  Capacity is now validated in
+    the review phase and immediately before the transaction begins.
+    """
+    results: list[dict[str, Any]] = []
+    for member in members:
+        node_id = int(member["node_id"])
+        endpoint_id = int(member["endpoint_id"])
+        supported = {int(cluster) for cluster in member.get("server_capabilities", [])}
+        selected = [cluster for cluster in clusters if cluster in supported]
+        entries = await _read_acl(client, node_id)
+        required = _required_group_acl_clusters(entries, group_id, endpoint_id, selected)
+        capacity = await _read_acl_capacity(client, node_id, entries)
+        _require_acl_capacity(capacity, len(required))
+        results.append(
+            {
+                "target": dict(member),
+                "capacity": capacity,
+                "entries_to_add": len(required),
+            }
+        )
+    return results
+
+
 async def _preflight_group_capacity(
     client: Any,
     *,
@@ -1136,6 +1424,19 @@ def _acl_grants_group(
     return False
 
 
+def _required_group_acl_clusters(
+    entries: list[dict[str, Any]],
+    group_id: int,
+    endpoint_id: int,
+    clusters: list[int],
+) -> list[int]:
+    return [
+        cluster_id
+        for cluster_id in clusters
+        if not _acl_grants_group(entries, group_id, endpoint_id, cluster_id)
+    ]
+
+
 def _new_group_acl(
     group_id: int, endpoint_id: int, cluster_id: int
 ) -> dict[str, Any]:
@@ -1250,6 +1551,75 @@ async def _read_acl(client: Any, node_id: int) -> list[dict[str, Any]]:
             )
         entries.append(entry)
     return entries
+
+
+async def _read_acl_capacity(
+    client: Any, node_id: int, entries: list[dict[str, Any]] | None = None
+) -> dict[str, int | None]:
+    """Read the target ACL limits without treating an unavailable limit as zero.
+
+    The ACL table itself is the authoritative used count.  The two capacity
+    attributes are optional in practice, so discovery remains useful when a
+    device does not expose them; writes only fail closed when a reported limit
+    is known to be insufficient.
+    """
+    if entries is None:
+        entries = await _read_acl(client, node_id)
+    maximum = await _read_optional_attribute(
+        client,
+        node_id,
+        f"0/{CLUSTER_ACCESS_CONTROL}/{ATTR_ACCESS_CONTROL_ENTRIES_PER_FABRIC}",
+    )
+    targets_per_entry = await _read_optional_attribute(
+        client,
+        node_id,
+        f"0/{CLUSTER_ACCESS_CONTROL}/{ATTR_TARGETS_PER_ACCESS_CONTROL_ENTRY}",
+    )
+    return {
+        "used": len(entries),
+        "maximum": maximum,
+        "available": _remaining_capacity(maximum, len(entries)),
+        "targets_per_entry": targets_per_entry,
+    }
+
+
+async def _read_optional_attribute(
+    client: Any, node_id: int, attribute_path: str
+) -> int | None:
+    try:
+        return _optional_int(await _read_attribute(client, node_id, attribute_path))
+    except Exception:  # noqa: BLE001 - optional Matter capacity attribute
+        return None
+
+
+def _remaining_capacity(maximum: int | None, used: int) -> int | None:
+    return max(0, maximum - used) if maximum is not None else None
+
+
+def _require_acl_capacity(capacity: Mapping[str, int | None], entries_to_add: int) -> None:
+    maximum = capacity.get("maximum")
+    used = capacity.get("used")
+    if maximum is None or used is None:
+        return
+    if used + entries_to_add > maximum:
+        raise StudioWriteError(
+            f"The target ACL is full ({used}/{maximum}). Reclaim an unused ACL rule before creating this Binding."
+        )
+
+
+def _public_acl_capacity(
+    capacity: Mapping[str, int | None], *, entries_to_add: int = 0
+) -> dict[str, int | None]:
+    used = capacity.get("used")
+    maximum = capacity.get("maximum")
+    available = capacity.get("available")
+    return {
+        "used": used,
+        "maximum": maximum,
+        "available": available,
+        "targets_per_entry": capacity.get("targets_per_entry"),
+        "entries_to_add": entries_to_add,
+    }
 
 
 async def _read_fabric_index(client: Any, node_id: int) -> int:
@@ -1609,6 +1979,19 @@ def _acl_grants_case(
             if endpoint_matches and cluster_matches:
                 return True
     return False
+
+
+def _required_case_acl_clusters(
+    entries: list[dict[str, Any]],
+    source_node_id: int,
+    endpoint_id: int,
+    clusters: list[int],
+) -> list[int]:
+    return [
+        cluster_id
+        for cluster_id in clusters
+        if not _acl_grants_case(entries, source_node_id, endpoint_id, cluster_id)
+    ]
 
 
 def _new_case_acl(
