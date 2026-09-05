@@ -331,7 +331,10 @@ async def async_prepare_unicast(
         acl_entries, source_node_id, target_endpoint_id, selected_clusters
     )
     acl_capacity = await _read_acl_capacity(client, target_node_id, acl_entries)
-    _require_acl_capacity(acl_capacity, len(required_acl_clusters))
+    acl_entries_to_add = _new_case_acl_entries(
+        source_node_id, target_endpoint_id, required_acl_clusters, acl_capacity
+    )
+    _require_acl_capacity(acl_capacity, len(acl_entries_to_add))
     acl_needed = bool(required_acl_clusters)
     plan_id = secrets.token_urlsafe(24)
     plan = {
@@ -356,7 +359,7 @@ async def async_prepare_unicast(
         "existing_binding_count": len(bindings),
         "acl": "will_add" if acl_needed else "already_granted",
         "acl_capacity": _public_acl_capacity(
-            acl_capacity, entries_to_add=len(required_acl_clusters)
+            acl_capacity, entries_to_add=len(acl_entries_to_add)
         ),
         "steps": [
             "Read the latest Binding list and target ACL capacity.",
@@ -410,12 +413,15 @@ async def async_apply_unicast(hass: HomeAssistant, *, plan_id: str) -> dict[str,
                     "The target ACL changed and is no longer safe to update. Review a new plan."
                 )
             acl_capacity = await _read_acl_capacity(client, target_node_id, current_acl)
-            _require_acl_capacity(acl_capacity, len(required_acl_clusters))
-            acl_payload = list(current_acl)
-            acl_payload.extend(
-                _new_case_acl(source_node_id, target_endpoint_id, cluster_id)
-                for cluster_id in required_acl_clusters
+            acl_entries_to_add = _new_case_acl_entries(
+                source_node_id,
+                target_endpoint_id,
+                required_acl_clusters,
+                acl_capacity,
             )
+            _require_acl_capacity(acl_capacity, len(acl_entries_to_add))
+            acl_payload = list(current_acl)
+            acl_payload.extend(acl_entries_to_add)
             await _write_acl(client, target_node_id, acl_payload)
             verified_acl = await _verify_acl(
                 client,
@@ -645,15 +651,16 @@ async def async_apply_groupcast(hass: HomeAssistant, *, plan_id: str) -> dict[st
 
             for member in members:
                 member_supported = set(member.get("server_capabilities", []))
-                for cluster_id in clusters:
-                    if cluster_id not in member_supported:
-                        continue
+                member_clusters = [
+                    cluster_id for cluster_id in clusters if cluster_id in member_supported
+                ]
+                if member_clusters:
                     await _ensure_group_acl(
                         client,
                         node_id=int(member["node_id"]),
                         endpoint_id=int(member["endpoint_id"]),
                         group_id=group.group_id,
-                        cluster_id=cluster_id,
+                        clusters=member_clusters,
                     )
 
             next_bindings = _groupcast_binding_replacement(
@@ -1032,12 +1039,15 @@ async def _preflight_group_acl_capacity(
         entries = await _read_acl(client, node_id)
         required = _required_group_acl_clusters(entries, group_id, endpoint_id, selected)
         capacity = await _read_acl_capacity(client, node_id, entries)
-        _require_acl_capacity(capacity, len(required))
+        entries_to_add = _new_group_acl_entries(
+            group_id, endpoint_id, required, capacity
+        )
+        _require_acl_capacity(capacity, len(entries_to_add))
         results.append(
             {
                 "target": dict(member),
                 "capacity": capacity,
-                "entries_to_add": len(required),
+                "entries_to_add": len(entries_to_add),
             }
         )
     return results
@@ -1373,26 +1383,26 @@ async def _ensure_group_acl(
     node_id: int,
     endpoint_id: int,
     group_id: int,
-    cluster_id: int,
+    clusters: list[int],
 ) -> None:
     entries = await _read_acl(client, node_id)
-    if _acl_grants_group(entries, group_id, endpoint_id, cluster_id):
+    required = _required_group_acl_clusters(entries, group_id, endpoint_id, clusters)
+    if not required:
         return
     if not _has_admin_acl(entries):
         raise StudioWriteError(
             "A selected target ACL cannot be safely updated because no administrator entry was found."
         )
-    await _write_acl(
-        client,
-        node_id,
-        [
-            *entries,
-            _new_group_acl(group_id, endpoint_id, cluster_id),
-        ],
-    )
+    capacity = await _read_acl_capacity(client, node_id, entries)
+    entries_to_add = _new_group_acl_entries(group_id, endpoint_id, required, capacity)
+    _require_acl_capacity(capacity, len(entries_to_add))
+    await _write_acl(client, node_id, [*entries, *entries_to_add])
     for _ in range(_VERIFY_ATTEMPTS):
         verified = await _read_acl(client, node_id)
-        if _acl_grants_group(verified, group_id, endpoint_id, cluster_id):
+        if all(
+            _acl_grants_group(verified, group_id, endpoint_id, cluster_id)
+            for cluster_id in required
+        ):
             return
         await asyncio.sleep(_VERIFY_DELAY_SECONDS)
     raise StudioWriteError("A selected target did not confirm the group access rule.")
@@ -1438,7 +1448,7 @@ def _required_group_acl_clusters(
 
 
 def _new_group_acl(
-    group_id: int, endpoint_id: int, cluster_id: int
+    group_id: int, endpoint_id: int, clusters: Sequence[int]
 ) -> dict[str, Any]:
     return {
         "privilege": _ACL_PRIVILEGE_OPERATE,
@@ -1446,9 +1456,22 @@ def _new_group_acl(
         "subjects": [group_id],
         "targets": [
             {"cluster": cluster_id, "endpoint": endpoint_id, "deviceType": None}
+            for cluster_id in clusters
         ],
         "fabricIndex": 0,
     }
+
+
+def _new_group_acl_entries(
+    group_id: int,
+    endpoint_id: int,
+    clusters: Sequence[int],
+    capacity: Mapping[str, int | None],
+) -> list[dict[str, Any]]:
+    return [
+        _new_group_acl(group_id, endpoint_id, chunk)
+        for chunk in _acl_target_chunks(clusters, capacity)
+    ]
 
 
 async def _write_and_verify_group_bindings(
@@ -1995,7 +2018,7 @@ def _required_case_acl_clusters(
 
 
 def _new_case_acl(
-    source_node_id: int, endpoint_id: int, cluster_id: int
+    source_node_id: int, endpoint_id: int, clusters: Sequence[int]
 ) -> dict[str, Any]:
     return {
         "privilege": _ACL_PRIVILEGE_OPERATE,
@@ -2003,9 +2026,42 @@ def _new_case_acl(
         "subjects": [source_node_id],
         "targets": [
             {"cluster": cluster_id, "endpoint": endpoint_id, "deviceType": None}
+            for cluster_id in clusters
         ],
         "fabricIndex": 0,
     }
+
+
+def _new_case_acl_entries(
+    source_node_id: int,
+    endpoint_id: int,
+    clusters: Sequence[int],
+    capacity: Mapping[str, int | None],
+) -> list[dict[str, Any]]:
+    return [
+        _new_case_acl(source_node_id, endpoint_id, chunk)
+        for chunk in _acl_target_chunks(clusters, capacity)
+    ]
+
+
+def _acl_target_chunks(
+    clusters: Sequence[int], capacity: Mapping[str, int | None]
+) -> list[list[int]]:
+    """Pack least-privilege targets without assuming an unknown device limit.
+
+    Matter permits several TargetStructs in one ACL entry.  A device that
+    reports its per-entry target capacity can therefore grant On/Off, Level,
+    and Color Control in one entry instead of consuming three table slots.
+    When the limit is unavailable we retain the old one-target-per-entry shape
+    rather than making an unsafe assumption about what a device accepts.
+    """
+    normalized = sorted({int(cluster) for cluster in clusters})
+    if not normalized:
+        return []
+    limit = capacity.get("targets_per_entry") or 1
+    if limit < 1:
+        limit = 1
+    return [normalized[index : index + limit] for index in range(0, len(normalized), limit)]
 
 
 async def _write_acl(client: Any, node_id: int, entries: list[dict[str, Any]]) -> None:

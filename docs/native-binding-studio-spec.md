@@ -323,6 +323,11 @@ cluster-specific grants would exceed that known limit, planning fails before
 any Matter write. An unavailable capacity attribute is presented as unknown;
 it is not silently interpreted as zero.
 
+For one source and target endpoint, capabilities are packed into the smallest
+number of least-privilege ACL entries allowed by the reported
+`TargetsPerAccessControlEntry` limit. If that limit is unavailable, Studio
+keeps one target per entry rather than assuming an unsupported table shape.
+
 ## 7. Safety rules
 
 - Discovery is read-only.

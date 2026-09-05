@@ -31,6 +31,10 @@ be verified, Studio reports that state rather than claiming success.
 Before any unicast or groupcast provisioning begins, Studio also checks the
 target ACL's reported entry capacity. A known-full ACL is rejected during plan
 review, before any Binding, Group Key, or group-membership write is attempted.
+When a target reports more than one ACL target slot per entry, compatible
+capabilities for the same source and endpoint are packed into the fewest
+least-privilege ACL rules; an unavailable limit keeps the conservative
+one-target-per-rule representation.
 
 When two or more targets are selected, Studio chooses groupcast automatically.
 It allocates a dedicated application Group ID and Group Key set, provisions the

@@ -174,7 +174,7 @@ const previewHass: HomeAssistant = {
           maximum: 4,
           available: 2,
           targets_per_entry: 3,
-          entries_to_add: clusters.length,
+          entries_to_add: 1,
         },
         steps: ["Preview only — no device will be changed."],
       } as T;
