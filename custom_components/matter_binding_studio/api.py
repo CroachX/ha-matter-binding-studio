@@ -129,7 +129,8 @@ async def ws_get_acl_overview(
         vol.Required("type"): WS_TYPE_PREPARE_REMOVE_ACL,
         vol.Required("target_node_id"): vol.Coerce(int),
         vol.Required("target_endpoint_id"): vol.Coerce(int),
-        vol.Required("entry_index"): vol.Coerce(int),
+        vol.Optional("entry_index"): vol.Coerce(int),
+        vol.Optional("entry_indexes"): [vol.Coerce(int)],
     }
 )
 @websocket_api.async_response
@@ -138,7 +139,7 @@ async def ws_prepare_remove_acl(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Create a reviewed plan for reclaiming one unused ACL entry."""
+    """Create a reviewed plan for reclaiming selected unused ACL entries."""
     if not _is_admin(connection):
         connection.send_error(msg["id"], "forbidden", "Matter Binding Studio is admin-only.")
         return
@@ -147,7 +148,8 @@ async def ws_prepare_remove_acl(
             hass,
             target_node_id=msg["target_node_id"],
             target_endpoint_id=msg["target_endpoint_id"],
-            entry_index=msg["entry_index"],
+            entry_index=msg.get("entry_index"),
+            entry_indexes=msg.get("entry_indexes"),
         )
     except StudioWriteError as err:
         connection.send_error(msg["id"], "plan_failed", str(err))

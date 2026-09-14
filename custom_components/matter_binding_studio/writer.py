@@ -113,9 +113,10 @@ async def async_prepare_remove_acl(
     *,
     target_node_id: int,
     target_endpoint_id: int,
-    entry_index: int,
+    entry_index: int | None = None,
+    entry_indexes: list[int] | None = None,
 ) -> dict[str, Any]:
-    """Prepare a guarded reclaim of one explicitly unused ACL entry."""
+    """Prepare a guarded reclaim of explicitly selected unused ACL entries."""
     snapshot = await async_get_snapshot(hass)
     target = _find_endpoint(
         snapshot.get("devices", []), target_node_id, target_endpoint_id
@@ -124,33 +125,48 @@ async def async_prepare_remove_acl(
         raise StudioWriteError("Choose a valid Matter output target.")
     client = _require_client(hass)
     entries = await _read_acl(client, target_node_id)
-    if entry_index < 0 or entry_index >= len(entries):
-        raise StudioWriteError("This ACL entry changed or no longer exists. Refresh first.")
-
-    entry = entries[entry_index]
-    public_entry = _public_acl_entry(
-        entry,
-        index=entry_index,
-        target_node_id=target_node_id,
-        endpoint_names={
-            int(endpoint["endpoint_id"]): _endpoint_presentation_name(endpoint)
-            for endpoint in snapshot.get("devices", [])
-            if endpoint.get("node_id") == target_node_id
-            and endpoint.get("endpoint_id") is not None
-        },
-        node_names=_node_name_index(snapshot.get("devices", [])),
-        group_names={
-            int(group["group_id"]): str(group.get("name") or "Native group")
-            for group in snapshot.get("native_control_sets", [])
-        },
-        relationships=snapshot.get("relationships", []),
+    selected_indexes = _normalise_acl_removal_indexes(
+        entry_index=entry_index, entry_indexes=entry_indexes
     )
-    if not public_entry["usage"]["safe_to_reclaim"]:
-        raise StudioWriteError(
-            "Only an unused, non-administrator ACL entry with concrete source and target rules can be reclaimed."
-        )
+    if not selected_indexes:
+        raise StudioWriteError("Choose at least one ACL entry to reclaim.")
 
-    entries_after = [entry for index, entry in enumerate(entries) if index != entry_index]
+    endpoint_names = {
+        int(endpoint["endpoint_id"]): _endpoint_presentation_name(endpoint)
+        for endpoint in snapshot.get("devices", [])
+        if endpoint.get("node_id") == target_node_id
+        and endpoint.get("endpoint_id") is not None
+    }
+    node_names = _node_name_index(snapshot.get("devices", []))
+    group_names = {
+        int(group["group_id"]): str(group.get("name") or "Native group")
+        for group in snapshot.get("native_control_sets", [])
+    }
+    public_entries = []
+    selected_index_set = set(selected_indexes)
+    for index in selected_indexes:
+        if index < 0 or index >= len(entries):
+            raise StudioWriteError(
+                "One selected ACL entry changed or no longer exists. Refresh first."
+            )
+        public_entry = _public_acl_entry(
+            entries[index],
+            index=index,
+            target_node_id=target_node_id,
+            endpoint_names=endpoint_names,
+            node_names=node_names,
+            group_names=group_names,
+            relationships=snapshot.get("relationships", []),
+        )
+        if not public_entry["usage"]["safe_to_reclaim"]:
+            raise StudioWriteError(
+                "Only unused, non-administrator ACL entries with concrete source and target rules can be reclaimed."
+            )
+        public_entries.append(public_entry)
+
+    entries_after = [
+        entry for index, entry in enumerate(entries) if index not in selected_index_set
+    ]
     plan_id = secrets.token_urlsafe(24)
     _pending_plans(hass)[plan_id] = {
         "kind": "remove_acl",
@@ -161,20 +177,22 @@ async def async_prepare_remove_acl(
         "target_endpoint_id": target_endpoint_id,
         "acl_before": entries,
         "acl_after": entries_after,
-        "entry": public_entry,
+        "entry": public_entries[0],
+        "entries": public_entries,
     }
     _purge_expired_plans(hass)
     return {
         "plan_id": plan_id,
         "expires_in_seconds": _PLAN_TTL_SECONDS,
         "target": target,
-        "entry": public_entry,
+        "entry": public_entries[0],
+        "entries": public_entries,
         "capacity_before": _public_acl_capacity(
             await _read_acl_capacity(client, target_node_id, entries)
         ),
         "steps": [
             "Read the latest target ACL table.",
-            "Remove only the reviewed unused operate rule.",
+            f"Remove only the {len(public_entries)} reviewed unused operate rule(s).",
             "Keep every administrator and in-use ACL rule.",
             "Write the remaining ACL table and read it back.",
         ],
@@ -199,7 +217,7 @@ async def async_apply_remove_acl(hass: HomeAssistant, *, plan_id: str) -> dict[s
                 return {
                     "success": True,
                     "verified": True,
-                    "message": "The unused target ACL rule was reclaimed and read back.",
+                    "message": f"{len(plan.get('entries', [plan['entry']]))} unused target ACL rule(s) were reclaimed and read back.",
                     "target": plan["target"],
                 }
             await asyncio.sleep(_VERIFY_DELAY_SECONDS)
@@ -212,6 +230,14 @@ async def async_apply_remove_acl(hass: HomeAssistant, *, plan_id: str) -> dict[s
         "message": "The ACL reclaim could not be verified. Refresh before retrying or changing this target.",
         "target": plan["target"],
     }
+
+
+def _normalise_acl_removal_indexes(
+    *, entry_index: int | None, entry_indexes: list[int] | None
+) -> list[int]:
+    if entry_indexes is None:
+        return [] if entry_index is None else [entry_index]
+    return sorted({int(index) for index in entry_indexes})
 
 
 async def async_prepare_cleanup_group(

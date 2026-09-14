@@ -174,15 +174,20 @@ const previewHass: HomeAssistant = {
             targets: [{ endpoint: "Study - Smart light", capability: "Color temperature" }],
             usage: { state: "unused", relationship_names: [], safe_to_reclaim: true },
           },
+          {
+            entry_index: 3,
+            kind: "operate",
+            auth_mode: "group",
+            subjects: ["Unused native group"],
+            targets: [{ endpoint: "Study - Smart light", capability: "On / Off" }],
+            usage: { state: "unused", relationship_names: [], safe_to_reclaim: true },
+          },
         ],
       } as T;
     }
     if (message.type === "matter_binding_studio/prepare_remove_acl") {
-      return {
-        plan_id: "preview-acl-removal",
-        expires_in_seconds: 300,
-        target: previewSnapshot.devices[1],
-        entry: {
+      const entries = [
+        {
           entry_index: 2,
           kind: "operate",
           auth_mode: "case",
@@ -190,6 +195,21 @@ const previewHass: HomeAssistant = {
           targets: [{ endpoint: "Study - Smart light", capability: "Color temperature" }],
           usage: { state: "unused", relationship_names: [], safe_to_reclaim: true },
         },
+        {
+          entry_index: 3,
+          kind: "operate",
+          auth_mode: "group",
+          subjects: ["Unused native group"],
+          targets: [{ endpoint: "Study - Smart light", capability: "On / Off" }],
+          usage: { state: "unused", relationship_names: [], safe_to_reclaim: true },
+        },
+      ].filter((entry) => Array.isArray(message.entry_indexes) ? message.entry_indexes.includes(entry.entry_index) : entry.entry_index === message.entry_index);
+      return {
+        plan_id: "preview-acl-removal",
+        expires_in_seconds: 300,
+        target: previewSnapshot.devices[1],
+        entry: entries[0],
+        entries,
         capacity_before: { used: 3, maximum: 4, available: 1, targets_per_entry: 3 },
         steps: [
           "Preview only — no ACL will be changed.",

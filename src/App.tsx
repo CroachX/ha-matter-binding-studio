@@ -151,6 +151,7 @@ type AclRemovalPlan = {
   expires_in_seconds: number;
   target: Endpoint;
   entry: AclEntry;
+  entries?: AclEntry[];
   capacity_before: AclCapacity;
   steps: string[];
 };
@@ -963,7 +964,11 @@ function AclInspector({
   const [removalConfirmed, setRemovalConfirmed] = useState(false);
   const [removalMessage, setRemovalMessage] = useState<string | null>(null);
   const [removalFailed, setRemovalFailed] = useState(false);
+  const [selectedEntryIndexes, setSelectedEntryIndexes] = useState<number[]>([]);
   const selectedTarget = targets.find((target) => endpointKey(target) === targetKey);
+  const reclaimableEntries = overview?.entries.filter((entry) => entry.usage.safe_to_reclaim) ?? [];
+  const selectedEntryIndexSet = new Set(selectedEntryIndexes);
+  const allReclaimableSelected = reclaimableEntries.length > 0 && reclaimableEntries.every((entry) => selectedEntryIndexSet.has(entry.entry_index));
 
   const readAcl = async () => {
     if (!hass || !selectedTarget || selectedTarget.node_id === null || selectedTarget.endpoint_id === null) return;
@@ -975,16 +980,24 @@ function AclInspector({
         target_node_id: selectedTarget.node_id,
         target_endpoint_id: selectedTarget.endpoint_id,
       }));
+      setSelectedEntryIndexes([]);
     } catch {
       setFailed(true);
       setOverview(null);
+      setSelectedEntryIndexes([]);
     } finally {
       setWorking(false);
     }
   };
 
-  const reviewRemoval = async (entry: AclEntry) => {
+  const reviewRemoval = async (entries: AclEntry[]) => {
     if (!hass || !selectedTarget || selectedTarget.node_id === null || selectedTarget.endpoint_id === null) return;
+    const entryIndexes = entries.filter((entry) => entry.usage.safe_to_reclaim).map((entry) => entry.entry_index);
+    if (!entryIndexes.length) {
+      setRemovalMessage(t.noAclEntriesSelected);
+      setRemovalFailed(true);
+      return;
+    }
     setWorking(true);
     setRemovalMessage(null);
     setRemovalFailed(false);
@@ -993,7 +1006,7 @@ function AclInspector({
         type: "matter_binding_studio/prepare_remove_acl",
         target_node_id: selectedTarget.node_id,
         target_endpoint_id: selectedTarget.endpoint_id,
-        entry_index: entry.entry_index,
+        entry_indexes: entryIndexes,
       }));
       setRemovalConfirmed(false);
     } catch (error) {
@@ -1044,6 +1057,7 @@ function AclInspector({
               setFailed(false);
               setRemovalPlan(null);
               setRemovalMessage(null);
+              setSelectedEntryIndexes([]);
             }}
           >
             <option value="" disabled>{t.chooseAclTarget}</option>
@@ -1066,13 +1080,44 @@ function AclInspector({
       {overview ? (
         <>
           <AclCapacitySummary capacity={overview.capacity} t={t} />
+          {reclaimableEntries.length ? (
+            <div className="mbs-acl-bulkbar">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={allReclaimableSelected}
+                  onChange={(event) => {
+                    setSelectedEntryIndexes(event.target.checked ? reclaimableEntries.map((entry) => entry.entry_index) : []);
+                  }}
+                />
+                {t.selectAllReclaimableAcl}
+              </label>
+              <span>{formatCount(t.selectedAclEntries, selectedEntryIndexes.length)}</span>
+              <button
+                type="button"
+                className="mbs-quiet-danger-button"
+                onClick={() => void reviewRemoval(reclaimableEntries.filter((entry) => selectedEntryIndexSet.has(entry.entry_index)))}
+                disabled={working || selectedEntryIndexes.length === 0}
+              >
+                {t.reviewSelectedAclReclaim}
+              </button>
+            </div>
+          ) : null}
           <div className="mbs-list">
             {overview.entries.map((entry) => (
               <AclEntryRow
                 entry={entry}
                 key={entry.entry_index}
                 t={t}
-                onReviewRemoval={reviewRemoval}
+                selected={selectedEntryIndexSet.has(entry.entry_index)}
+                onSelectionChange={(selected) => {
+                  setSelectedEntryIndexes((current) =>
+                    selected
+                      ? Array.from(new Set([...current, entry.entry_index])).sort((left, right) => left - right)
+                      : current.filter((index) => index !== entry.entry_index),
+                  );
+                }}
+                onReviewRemoval={(entry) => reviewRemoval([entry])}
                 working={working}
               />
             ))}
@@ -1082,7 +1127,9 @@ function AclInspector({
       {removalPlan ? (
         <div className="mbs-review mbs-removal-review">
           <strong>{t.aclRemovalReviewTitle}</strong>
-          <AclEntryRow entry={removalPlan.entry} t={t} />
+          {(removalPlan.entries ?? [removalPlan.entry]).map((entry) => (
+            <AclEntryRow entry={entry} key={entry.entry_index} t={t} />
+          ))}
           <p className="mbs-meta">{t.aclRemovalKeepsInUse}</p>
           <ul>{removalPlan.steps.map((step) => <li key={step}>{step}</li>)}</ul>
           <label className="mbs-confirm">
@@ -1091,7 +1138,7 @@ function AclInspector({
               checked={removalConfirmed}
               onChange={(event) => setRemovalConfirmed(event.target.checked)}
             />
-            {t.confirmAclRemoval}
+            {formatCount(t.confirmAclRemoval, (removalPlan.entries ?? [removalPlan.entry]).length)}
           </label>
           <div className="mbs-review-actions">
             <button
@@ -1123,11 +1170,15 @@ function AclInspector({
 function AclEntryRow({
   entry,
   t,
+  selected,
+  onSelectionChange,
   onReviewRemoval,
   working = false,
 }: {
   entry: AclEntry;
   t: Copy;
+  selected?: boolean;
+  onSelectionChange?: (selected: boolean) => void;
   onReviewRemoval?: (entry: AclEntry) => void;
   working?: boolean;
 }) {
@@ -1147,7 +1198,18 @@ function AclEntryRow({
   return (
     <article className="mbs-card mbs-acl-entry">
       <div className="mbs-card-topline">
-        <strong>{kind}</strong>
+        <div className="mbs-acl-entry-title">
+          {onSelectionChange && entry.usage.safe_to_reclaim ? (
+            <input
+              type="checkbox"
+              checked={selected ?? false}
+              onChange={(event) => onSelectionChange(event.target.checked)}
+              disabled={working}
+              aria-label={`${t.selectAclEntry} ${entry.entry_index}`}
+            />
+          ) : null}
+          <strong>{kind}</strong>
+        </div>
         <span className={`mbs-acl-state mbs-acl-${entry.usage.state}`}>{usage}</span>
       </div>
       <p className="mbs-meta">{authMode}</p>
