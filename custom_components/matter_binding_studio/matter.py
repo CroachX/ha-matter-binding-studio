@@ -240,42 +240,37 @@ def _build_name_index(hass: HomeAssistant) -> dict[str, dict[Any, Any]]:
             entities_by_device.setdefault(entity.device_id, []).append(entity)
 
     for device in device_registry.devices.values():
-        parsed_identifier = next(
-            (
-                parsed
-                for identifier in device.identifiers
-                if (parsed := _parse_matter_identifier(identifier)) is not None
-            ),
-            None,
+        identifiers = sorted(
+            identifier for identifier in device.identifiers
+            if _parse_matter_identifier(identifier) is not None
         )
-        if parsed_identifier is None:
+        if not identifiers:
             continue
-        node_id, bridge_root = parsed_identifier
         device_name = str(device.name_by_user or device.name or "").strip()
         area_name = None
         if device.area_id:
             area = area_registry.async_get_area(device.area_id)
             area_name = area.name if area else None
 
-        if bridge_root is None:
-            if device_name:
-                index["node_names"].setdefault(node_id, device_name)
-            if area_name:
-                index["node_areas"].setdefault(node_id, area_name)
-        else:
-            endpoint_key = (node_id, bridge_root)
-            if device_name:
-                index["endpoint_device_names"].setdefault(endpoint_key, device_name)
-            if area_name:
-                index["endpoint_areas"].setdefault(endpoint_key, area_name)
+        for identifier in identifiers:
+            node_id, bridge_root = _parse_matter_identifier(identifier)
+            if bridge_root is None:
+                if device_name:
+                    index["node_names"].setdefault(node_id, device_name)
+                if area_name:
+                    index["node_areas"].setdefault(node_id, area_name)
+            else:
+                endpoint_key = (node_id, bridge_root)
+                if device_name:
+                    index["endpoint_device_names"].setdefault(endpoint_key, device_name)
+                if area_name:
+                    index["endpoint_areas"].setdefault(endpoint_key, area_name)
 
         for entity in entities_by_device.get(device.id, []):
             if entity.disabled:
                 continue
-            endpoint_id = _endpoint_from_unique_id(
-                entity.unique_id, node_id, bridge_root
-            )
-            if endpoint_id is None:
+            endpoint_key = _entity_endpoint_key(entity.unique_id, identifiers)
+            if endpoint_key is None:
                 continue
             priority = _entity_name_priority(entity)
             entity_name = str(entity.name or entity.original_name or "").strip()
@@ -288,12 +283,12 @@ def _build_name_index(hass: HomeAssistant) -> dict[str, dict[Any, Any]]:
             if entity_name:
                 _set_endpoint_name(
                     index,
-                    (node_id, endpoint_id),
+                    endpoint_key,
                     entity_name,
                     priority,
                 )
             if area_name:
-                index["endpoint_areas"].setdefault((node_id, endpoint_id), area_name)
+                index["endpoint_areas"].setdefault(endpoint_key, area_name)
     return index
 
 
@@ -376,9 +371,38 @@ def _endpoint_from_unique_id(
         numeric_segments.append(int(segment))
     if not numeric_segments:
         return None
-    if bridge_root is not None and numeric_segments[0] == bridge_root:
+    if bridge_root is not None:
+        if numeric_segments[0] != bridge_root:
+            return None
         return numeric_segments[1] if len(numeric_segments) > 1 else bridge_root
     return numeric_segments[0]
+
+
+def _entity_endpoint_key(
+    unique_id: str | None, identifiers: Iterable[tuple[str, ...]]
+) -> tuple[int, int] | None:
+    """Match the entity's fabric, node and bridge root, not registry order."""
+    if not unique_id:
+        return None
+    for identifier in identifiers:
+        parsed = _parse_matter_identifier(identifier)
+        if parsed is None:
+            continue
+        # Include the fabric and a trailing separator so root 7 cannot match 75.
+        prefix = str(identifier[1]).removeprefix("deviceid_") + "-"
+        node_id, bridge_root = parsed
+        if bridge_root is None:
+            # Older non-bridged entities omit the MatterNodeDevice segment.
+            legacy_prefix = prefix.removesuffix("MatterNodeDevice-")
+            matches = unique_id.casefold().startswith((prefix.casefold(), legacy_prefix.casefold()))
+        else:
+            matches = unique_id.casefold().startswith(prefix.casefold())
+        if not matches:
+            continue
+        endpoint_id = _endpoint_from_unique_id(unique_id, node_id, bridge_root)
+        if endpoint_id is not None:
+            return node_id, endpoint_id
+    return None
 
 
 def _raw_endpoints(raw_node: Any) -> dict[int, Any]:
@@ -684,16 +708,15 @@ def _endpoint_name(
     return (
         names["endpoint_names"].get(key)
         or names["endpoint_device_names"].get(key)
-        or node_name
+        or f"{node_name} · Endpoint {endpoint_id}"
     )
 
 
 def _endpoint_area(
     names: Mapping[str, Mapping[Any, Any]], node_id: int, endpoint_id: int
 ) -> str | None:
-    return names["endpoint_areas"].get(
-        (node_id, endpoint_id), names["node_areas"].get(node_id)
-    )
+    # Unmatched bridge endpoints must not inherit the hub's physical room.
+    return names["endpoint_areas"].get((node_id, endpoint_id))
 
 
 def _raw_node_name(raw_node: Any) -> str:
