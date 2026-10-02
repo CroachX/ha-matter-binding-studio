@@ -9,7 +9,7 @@ family-facing controls.
 
 ## Current scope: reviewed native bindings and automatic groups
 
-Version `0.4.2` reads the existing Matter fabric and presents:
+Version `0.5.0` reads the existing Matter fabric and presents:
 
 - endpoint-backed Home Assistant names, including bridged functional endpoints
 - existing Binding Cluster relationships, shown as direct or native-group routes
@@ -65,7 +65,7 @@ Group ID, removes its recorded ACL targets, members, Group Key mappings, and
 Key Sets, then drops local metadata only after the device operations verify.
 If an operation is uncertain, the group remains recorded as needing repair.
 
-## UI update (not yet released)
+## Compact UI and batch deletion
 
 The main view is a compact Binding list with source/target search and area
 filtering. **Select filtered results** selects only visible relationships;
@@ -101,11 +101,33 @@ Matter must already be configured in Home Assistant. The panel uses the
 Home Assistant language setting (`hass.locale.language`, with `hass.language`
 as fallback) and does not maintain a separate label or language registry.
 
+### Localization
+
+The panel supports English, Traditional Chinese and Simplified Chinese.
+Explicit `zh-Hant`/`zh-Hans` scripts take precedence; Taiwan/Hong Kong/Macau
+select Traditional Chinese, and China/Singapore/Malaysia select Simplified
+Chinese. Bare `zh` keeps the historic Traditional Chinese default. Unsupported
+languages fall back to English. Device and area names stay exactly as named in HA.
+
+Panel labels are in `src/copy.ts`. Backend errors, plan steps, results and ACL
+labels use stable codes and scalar parameters from `messages.json` beside the
+integration source. Successful responses retain legacy English fields and add
+`*_i18n` descriptors. Errors retain the HA error code/message and add a
+`studio_message` descriptor. The panel retains raw descriptors so messages can
+follow a language change without repeating a device operation. Unknown codes
+use their English fallback. External transport errors may still use the
+upstream service's original text.
+
+Update through HACS, restart Home Assistant for the new backend, and reload the
+panel. The update itself does not write any Binding, ACL, or group configuration.
+
 ## Development
 
 ```bash
 npm install
 npm run build
+node --test tests/messages.test.cjs
+python -m unittest discover -s tests -v
 ```
 
 The production bundle is committed at:
