@@ -25,6 +25,7 @@ from .const import (
     WS_TYPE_PREPARE_UNICAST,
 )
 from .matter import async_get_snapshot
+from . import bulk
 from .writer import (
     StudioWriteError,
     async_apply_cleanup_group,
@@ -60,6 +61,8 @@ async def async_setup(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_apply_groupcast)
     websocket_api.async_register_command(hass, ws_prepare_remove_binding)
     websocket_api.async_register_command(hass, ws_apply_remove_binding)
+    websocket_api.async_register_command(hass, ws_prepare_bulk_remove)
+    websocket_api.async_register_command(hass, ws_apply_bulk_remove)
     domain_data["_ws_registered"] = True
 
 
@@ -457,6 +460,47 @@ async def ws_apply_remove_binding(
         return
     except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
         _send_matter_operation_error(connection, msg, operation="Binding removal", err=err)
+        return
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/prepare_bulk_remove_bindings",
+    vol.Required("relationship_ids"): vol.All([str], vol.Length(min=1, max=200)),
+})
+@websocket_api.async_response
+async def ws_prepare_bulk_remove(hass, connection, msg):
+    if not _is_admin(connection):
+        connection.send_error(msg["id"], "forbidden", "Matter Binding Studio is admin-only.")
+        return
+    try:
+        result = await bulk.prepare(hass, msg["relationship_ids"])
+    except StudioWriteError as err:
+        connection.send_error(msg["id"], "plan_failed", str(err))
+        return
+    except Exception as err:
+        _send_matter_operation_error(connection, msg, operation="bulk removal planning", err=err)
+        return
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/apply_bulk_remove_bindings",
+    vol.Required("plan_id"): str,
+    vol.Required("confirm"): True,
+})
+@websocket_api.async_response
+async def ws_apply_bulk_remove(hass, connection, msg):
+    if not _is_admin(connection):
+        connection.send_error(msg["id"], "forbidden", "Matter Binding Studio is admin-only.")
+        return
+    try:
+        result = await bulk.apply(hass, msg["plan_id"])
+    except StudioWriteError as err:
+        connection.send_error(msg["id"], "write_failed", str(err))
+        return
+    except Exception as err:
+        _send_matter_operation_error(connection, msg, operation="bulk removal", err=err)
         return
     connection.send_result(msg["id"], result)
 

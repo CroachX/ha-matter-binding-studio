@@ -2209,7 +2209,7 @@ def _binding_matches_target(
 
 
 def _binding_signature(bindings: list[dict[str, int | None]]) -> list[tuple[Any, ...]]:
-    return sorted(
+    rows = [
         (
             entry.get("target_node_id"),
             entry.get("target_group_id"),
@@ -2217,7 +2217,10 @@ def _binding_signature(bindings: list[dict[str, int | None]]) -> list[tuple[Any,
             entry.get("cluster_id"),
         )
         for entry in bindings
-    )
+    ]
+    # Direct and group entries contain None in different columns. Comparing
+    # None with an integer fails when both routes share a source table.
+    return sorted(rows, key=lambda row: tuple(-1 if value is None else value for value in row))
 
 
 def _acl_signature(entries: list[Mapping[str, Any]]) -> list[tuple[Any, ...]]:
