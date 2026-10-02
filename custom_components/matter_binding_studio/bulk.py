@@ -11,17 +11,17 @@ def group_selections(snapshot, relationship_ids):
     """Resolve stable relationship identities from a fresh server snapshot."""
     ids = set(relationship_ids)
     if not ids or len(ids) > 200:
-        raise w.StudioWriteError("Select between 1 and 200 relationships.")
+        raise w.StudioWriteError(w.message("bulk_selection_size"))
     relationships = {row["id"]: row for row in snapshot["relationships"]}
     if not ids.issubset(relationships):
-        raise w.StudioWriteError("A selected relationship changed. Refresh and review again.")
+        raise w.StudioWriteError(w.message("bulk_selection_changed"))
     groups = {}
     for identity in sorted(ids):
         row = relationships[identity]
         source = row["source"]
         if (not source.get("can_bind") or source.get("node_id") is None
                 or source.get("endpoint_id") is None):
-            raise w.StudioWriteError("A selected source is unavailable.")
+            raise w.StudioWriteError(w.message("bulk_source_unavailable"))
         key = (source["node_id"], source["endpoint_id"])
         groups.setdefault(key, []).append(row)
     return groups
@@ -33,12 +33,12 @@ def matches(entry, relationship):
     if target["kind"] == "endpoint":
         if (member is None or member.get("node_id") is None
                 or member.get("endpoint_id") is None):
-            raise w.StudioWriteError("A selected target is incomplete. Refresh first.")
+            raise w.StudioWriteError(w.message("bulk_target_incomplete"))
     elif target["kind"] == "group":
         if target.get("group_id") is None:
-            raise w.StudioWriteError("A selected group is incomplete. Refresh first.")
+            raise w.StudioWriteError(w.message("bulk_group_incomplete"))
     else:
-        raise w.StudioWriteError("The selected target type is not supported.")
+        raise w.StudioWriteError(w.message("bulk_target_unsupported"))
     return w._binding_matches_target(
         entry, target_kind=target["kind"],
         target_node_id=member["node_id"] if member else None,
@@ -56,7 +56,7 @@ async def prepare(hass, relationship_ids):
         before = await w._read_bindings(client, *key)
         for row in rows:
             if not any(matches(entry, row) for entry in before):
-                raise w.StudioWriteError("The source Binding table changed. Refresh and review again.")
+                raise w.StudioWriteError(w.message("bulk_table_changed"))
         after = [entry for entry in before if not any(matches(entry, row) for row in rows)]
         tables.append({"key": key, "before": before, "after": after, "rows": rows})
     plan_id = secrets.token_urlsafe(24)

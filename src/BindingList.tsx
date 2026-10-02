@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Copy } from "./copy";
-import { endpointLabel, relationshipTargetLabel, clusterName, errorMessage } from "./App";
+import { endpointLabel, relationshipTargetLabel, clusterName } from "./App";
+import { errorMessage, formatMessage, studioCall, type Message } from "./messages";
 import type { HomeAssistant, Relationship, Endpoint } from "./App";
 
 type Plan = { plan_id: string; relationships: Relationship[]; source_count: number; removed_entry_count: number };
@@ -14,7 +15,8 @@ export default function BindingList({ hass, relationships, refresh, t }: {
   const [selected, setSelected] = useState<string[]>([]);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [working, setWorking] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<Message | null>(null);
+  const [unconfirmed, setUnconfirmed] = useState(false);
   const [results, setResults] = useState<Result[]>([]);
   const dialog = useRef<HTMLDialogElement>(null);
   const allCheck = useRef<HTMLInputElement>(null);
@@ -43,21 +45,21 @@ export default function BindingList({ hass, relationships, refresh, t }: {
 
   const review = async (ids: string[]) => {
     if (!hass || !ids.length) return;
-    setWorking(true); setError(""); setResults([]);
+    setWorking(true); setError(null); setUnconfirmed(false); setResults([]);
     try {
-      setPlan(await hass.callWS<Plan>({ type: "matter_binding_studio/prepare_bulk_remove_bindings", relationship_ids: ids }));
+      setPlan(await studioCall<Plan>(hass, { type: "matter_binding_studio/prepare_bulk_remove_bindings", relationship_ids: ids }));
     } catch (err) { setError(errorMessage(err)); }
     finally { setWorking(false); }
   };
   const apply = async () => {
     if (!hass || !plan) return;
-    setWorking(true); setError("");
+    setWorking(true); setError(null); setUnconfirmed(false);
     try {
-      const response = await hass.callWS<{ results: Result[] }>({ type: "matter_binding_studio/apply_bulk_remove_bindings", plan_id: plan.plan_id, confirm: true });
+      const response = await studioCall<{ results: Result[] }>(hass, { type: "matter_binding_studio/apply_bulk_remove_bindings", plan_id: plan.plan_id, confirm: true });
       setResults(response.results);
       const completed = new Set(response.results.filter(r => r.status === "verified").flatMap(r => r.relationship_ids));
       setSelected(ids => ids.filter(id => !completed.has(id)));
-    } catch (err) { setError(`${errorMessage(err)} ${t.refreshBeforeRetry}`); }
+    } catch (err) { setError(errorMessage(err)); setUnconfirmed(true); }
     finally { setPlan(null); await refresh(); setWorking(false); }
   };
 
@@ -88,7 +90,7 @@ export default function BindingList({ hass, relationships, refresh, t }: {
       </article>)}
       {!filtered.length ? <p className="mbs-empty">{relationships.length ? t.noMatchingRelationships : t.noRelationships}</p> : null}
     </div>
-    {error ? <p role="alert" className="mbs-warning">{error}</p> : null}
+    {error ? <p role="alert" className="mbs-warning">{formatMessage(error, t)}{unconfirmed ? ` ${t.refreshBeforeRetry}` : ""}</p> : null}
     {results.length ? <div aria-live="polite" className="mbs-batch-results"><strong>{t.removalResults}</strong>{results.map(r => <p key={`${r.source.node_id}:${r.source.endpoint_id}`} className={r.status === "verified" ? "mbs-success" : "mbs-warning"}>{endpointLabel(r.source)} — {t[r.status]} ({r.relationship_ids.length})</p>)}</div> : null}
     <dialog ref={dialog} className="mbs-dialog" aria-labelledby="mbs-delete-title" onCancel={e => { if (working) e.preventDefault(); else setPlan(null); }}>
       {plan ? <><h2 id="mbs-delete-title">{t.deleteSelected.replace("{count}", String(plan.relationships.length))}</h2>

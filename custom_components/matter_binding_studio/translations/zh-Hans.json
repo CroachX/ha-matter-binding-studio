@@ -1,0 +1,14 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "Matter Binding Studio 已设置。",
+      "matter_not_configured": "请先设置 Matter 集成，再加入 Matter Binding Studio。"
+    },
+    "step": {
+      "user": {
+        "title": "Matter Binding Studio",
+        "description": "加入仅供管理员使用的原生 Matter Binding Studio 面板。"
+      }
+    }
+  }
+}

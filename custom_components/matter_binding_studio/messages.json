@@ -1,0 +1,592 @@
+{
+  "invalid_target": {
+    "en": "Choose a valid Matter output target.",
+    "zh-Hant": "請選擇有效的 Matter 輸出目標。",
+    "zh-Hans": "请选择有效的 Matter 输出目标。"
+  },
+  "choose_acl": {
+    "en": "Choose at least one ACL entry to reclaim.",
+    "zh-Hant": "請至少選擇一筆要回收的 ACL 規則。",
+    "zh-Hans": "请至少选择一笔要回收的 ACL 规则。"
+  },
+  "acl_entry_changed": {
+    "en": "One selected ACL entry changed or no longer exists. Refresh first.",
+    "zh-Hant": "選取的 ACL 規則已變更或不存在，請先重新整理。",
+    "zh-Hans": "选取的 ACL 规则已变更或不存在，请先重新整理。"
+  },
+  "acl_reclaim_unsafe": {
+    "en": "Only unused, non-administrator ACL entries with concrete source and target rules can be reclaimed.",
+    "zh-Hant": "只能回收未使用、非管理員且明確指定來源與目標的 ACL 規則。",
+    "zh-Hans": "只能回收未使用、非管理员且明确指定来源与目标的 ACL 规则。"
+  },
+  "acl_changed": {
+    "en": "The target ACL changed after review. Refresh and review a new reclaim plan.",
+    "zh-Hant": "目標 ACL 在檢視計畫後已變更，請重新整理並產生新的回收計畫。",
+    "zh-Hans": "目标 ACL 在检视计划后已变更，请重新整理并产生新的回收计划。"
+  },
+  "acl_reclaimed": {
+    "en": "{count} unused target ACL rule(s) were reclaimed and read back.",
+    "zh-Hant": "已回收 {count} 筆未使用的目標 ACL 規則，並完成回讀確認。",
+    "zh-Hans": "已回收 {count} 笔未使用的目标 ACL 规则，并完成回读确认。"
+  },
+  "acl_reclaim_unverified": {
+    "en": "The ACL reclaim could not be verified. Refresh before retrying or changing this target.",
+    "zh-Hant": "無法確認 ACL 回收結果，請先重新整理，再重試或變更目標。",
+    "zh-Hans": "无法确认 ACL 回收结果，请先重新整理，再重试或变更目标。"
+  },
+  "group_unmanaged": {
+    "en": "This native group is not managed by Matter Binding Studio.",
+    "zh-Hant": "此原生群組不是由 Matter Binding Studio 管理。",
+    "zh-Hans": "此原生群组不是由 Matter Binding Studio 管理。"
+  },
+  "group_source_missing": {
+    "en": "The managed group's source endpoint is no longer available.",
+    "zh-Hant": "受管理群組的來源端點已無法使用。",
+    "zh-Hans": "受管理群组的来源端点已无法使用。"
+  },
+  "group_members_missing": {
+    "en": "One or more managed group members are no longer available. Keep this group marked for repair.",
+    "zh-Hant": "部分受管理群組成員已無法使用，請保留群組的待修復標記。",
+    "zh-Hans": "部分受管理群组成员已无法使用，请保留群组的待修复标记。"
+  },
+  "group_changed": {
+    "en": "This managed group changed after review. Refresh and review a new cleanup plan.",
+    "zh-Hant": "受管理群組在檢視後已變更，請重新整理並產生新的清理計畫。",
+    "zh-Hans": "受管理群组在检视后已变更，请重新整理并产生新的清理计划。"
+  },
+  "group_cleanup_unverified": {
+    "en": "Native group cleanup stopped before full verification. The recorded group remains available for repair.",
+    "zh-Hant": "原生群組清理未完成驗證，已保留群組紀錄以供修復。",
+    "zh-Hans": "原生群组清理未完成验证，已保留群组纪录以供修复。"
+  },
+  "group_cleaned": {
+    "en": "The idle native group, access rules, memberships, and Group Key mapping were cleaned up.",
+    "zh-Hant": "已清理閒置原生群組、存取規則、成員資格與 Group Key 對應。",
+    "zh-Hans": "已清理闲置原生群组、存取规则、成员资格与 Group Key 对应。"
+  },
+  "group_in_use": {
+    "en": "Remove every Binding that targets this native group before cleaning it up.",
+    "zh-Hant": "請先移除所有指向此原生群組的 Binding，再清理群組。",
+    "zh-Hans": "请先移除所有指向此原生群组的 Binding，再清理群组。"
+  },
+  "binding_exists": {
+    "en": "This control relationship already exists.",
+    "zh-Hant": "此控制關係已存在。",
+    "zh-Hans": "此控制关系已存在。"
+  },
+  "acl_admin_missing": {
+    "en": "The target ACL cannot be safely updated because no administrator entry was found.",
+    "zh-Hant": "目標 ACL 沒有管理員規則，無法安全更新。",
+    "zh-Hans": "目标 ACL 没有管理员规则，无法安全更新。"
+  },
+  "binding_changed": {
+    "en": "The source Binding list changed after review. Refresh and review a new plan.",
+    "zh-Hant": "來源 Binding 表在檢視後已變更，請重新整理並產生新計畫。",
+    "zh-Hans": "来源 Binding 表在检视后已变更，请重新整理并产生新计划。"
+  },
+  "acl_became_unsafe": {
+    "en": "The target ACL changed and is no longer safe to update. Review a new plan.",
+    "zh-Hant": "目標 ACL 已變更，無法安全更新，請重新檢視計畫。",
+    "zh-Hans": "目标 ACL 已变更，无法安全更新，请重新检视计划。"
+  },
+  "acl_write_unverified": {
+    "en": "The target ACL write could not be verified; no Binding was written.",
+    "zh-Hant": "無法確認目標 ACL 寫入結果，因此未寫入 Binding。",
+    "zh-Hans": "无法确认目标 ACL 写入结果，因此未写入 Binding。"
+  },
+  "unicast_written": {
+    "en": "Native unicast binding was written and read back from the source device.",
+    "zh-Hant": "已寫入原生單播 Binding，並從來源裝置回讀確認。",
+    "zh-Hans": "已写入原生单播 Binding，并从来源装置回读确认。"
+  },
+  "group_id_claimed": {
+    "en": "The automatic group id was claimed after review. Refresh and review a new plan.",
+    "zh-Hant": "自動群組 ID 在檢視後已被使用，請重新整理並產生新計畫。",
+    "zh-Hans": "自动群组 ID 在检视后已被使用，请重新整理并产生新计划。"
+  },
+  "group_key_claimed": {
+    "en": "The automatic Group Key slot was claimed after review. Refresh and review a new plan.",
+    "zh-Hant": "Group Key 容量在檢視後已被使用，請重新整理並產生新計畫。",
+    "zh-Hans": "Group Key 容量在检视后已被使用，请重新整理并产生新计划。"
+  },
+  "group_busy": {
+    "en": "This automatic group is already being maintained. Refresh and review a new plan.",
+    "zh-Hant": "此自動群組正在維護中，請重新整理並產生新計畫。",
+    "zh-Hans": "此自动群组正在维护中，请重新整理并产生新计划。"
+  },
+  "group_provision_unverified": {
+    "en": "The automatic group was provisioned but could not be fully verified. No unverified relationship is shown as ready.",
+    "zh-Hant": "自動群組已佈建，但尚未完整驗證；未驗證的控制關係不會標示為就緒。",
+    "zh-Hans": "自动群组已布建，但尚未完整验证；未验证的控制关系不会标示为就绪。"
+  },
+  "group_transaction_stopped": {
+    "en": "The automatic group transaction stopped before Binding verification. Review the recorded group before retrying.",
+    "zh-Hant": "自動群組交易在 Binding 驗證前中止，重試前請先檢查群組紀錄。",
+    "zh-Hans": "自动群组交易在 Binding 验证前中止，重试前请先检查群组纪录。"
+  },
+  "groupcast_written": {
+    "en": "Native groupcast binding was provisioned and read back from the source device.",
+    "zh-Hant": "已佈建原生群組廣播 Binding，並從來源裝置回讀確認。",
+    "zh-Hans": "已布建原生群组广播 Binding，并从来源装置回读确认。"
+  },
+  "source_missing": {
+    "en": "The Binding source is no longer available. Refresh first.",
+    "zh-Hant": "Binding 來源已無法使用，請先重新整理。",
+    "zh-Hans": "Binding 来源已无法使用，请先重新整理。"
+  },
+  "target_incomplete": {
+    "en": "The direct Binding target is incomplete. Refresh first.",
+    "zh-Hant": "直接 Binding 目標資料不完整，請先重新整理。",
+    "zh-Hans": "直接 Binding 目标资料不完整，请先重新整理。"
+  },
+  "group_incomplete": {
+    "en": "The native group target is incomplete. Refresh first.",
+    "zh-Hant": "原生群組目標資料不完整，請先重新整理。",
+    "zh-Hans": "原生群组目标资料不完整，请先重新整理。"
+  },
+  "target_type_unsupported": {
+    "en": "The Binding target type is not supported.",
+    "zh-Hant": "不支援此 Binding 目標類型。",
+    "zh-Hans": "不支援此 Binding 目标类型。"
+  },
+  "relationship_changed": {
+    "en": "This Binding relationship changed or no longer exists. Refresh and review again.",
+    "zh-Hant": "此 Binding 關係已變更或不存在，請重新整理後再檢視。",
+    "zh-Hans": "此 Binding 关系已变更或不存在，请重新整理后再检视。"
+  },
+  "binding_remove_unverified": {
+    "en": "The Binding removal could not be verified. Refresh before retrying or changing the group.",
+    "zh-Hant": "無法確認 Binding 刪除結果，請先重新整理，再重試或變更群組。",
+    "zh-Hans": "无法确认 Binding 删除结果，请先重新整理，再重试或变更群组。"
+  },
+  "binding_removed": {
+    "en": "The Binding was removed and the source Binding Cluster was read back.",
+    "zh-Hant": "已移除 Binding，並回讀來源 Binding Cluster 確認。",
+    "zh-Hans": "已移除 Binding，并回读来源 Binding Cluster 确认。"
+  },
+  "self_binding": {
+    "en": "A source endpoint cannot bind to itself.",
+    "zh-Hant": "來源端點不能 Binding 到自己。",
+    "zh-Hans": "来源端点不能 Binding 到自己。"
+  },
+  "invalid_source": {
+    "en": "Choose a valid Matter control source.",
+    "zh-Hant": "請選擇有效的 Matter 控制來源。",
+    "zh-Hans": "请选择有效的 Matter 控制来源。"
+  },
+  "choose_capability": {
+    "en": "Choose at least one supported capability.",
+    "zh-Hant": "請至少選擇一項支援的控制能力。",
+    "zh-Hans": "请至少选择一项支援的控制能力。"
+  },
+  "capability_mismatch": {
+    "en": "One or more selected capabilities are not supported by both endpoints.",
+    "zh-Hant": "部分選取能力未同時被來源與目標端點支援。",
+    "zh-Hans": "部分选取能力未同时被来源与目标端点支援。"
+  },
+  "invalid_targets": {
+    "en": "Choose valid Matter output targets.",
+    "zh-Hant": "請選擇有效的 Matter 輸出目標。",
+    "zh-Hans": "请选择有效的 Matter 输出目标。"
+  },
+  "group_min_targets": {
+    "en": "Choose at least two output targets for an automatic native group.",
+    "zh-Hant": "自動原生群組需要至少兩個輸出目標。",
+    "zh-Hans": "自动原生群组需要至少两个输出目标。"
+  },
+  "group_capability_mismatch": {
+    "en": "One or more selected capabilities are not supported by the source and any selected target.",
+    "zh-Hant": "部分選取能力不被來源支援，或沒有任何選取目標支援。",
+    "zh-Hans": "部分选取能力不被来源支援，或没有任何选取目标支援。"
+  },
+  "group_capacity_unknown": {
+    "en": "A participating device did not report Group and Group Key capacity.",
+    "zh-Hant": "參與裝置未回報群組與 Group Key 容量。",
+    "zh-Hans": "参与装置未回报群组与 Group Key 容量。"
+  },
+  "group_capacity_full": {
+    "en": "A participating device does not have one free native Group and Group Key slot.",
+    "zh-Hant": "參與裝置沒有足夠的原生群組或 Group Key 空間。",
+    "zh-Hans": "参与装置没有足够的原生群组或 Group Key 空间。"
+  },
+  "group_id_exhausted": {
+    "en": "No automatic native Group ID is available on this fabric.",
+    "zh-Hant": "此 Fabric 已無可用的自動原生群組 ID。",
+    "zh-Hans": "此 Fabric 已无可用的自动原生群组 ID。"
+  },
+  "group_key_id_exhausted": {
+    "en": "No automatic Group Key set ID is available on this fabric.",
+    "zh-Hant": "此 Fabric 已無可用的自動 Group Key Set ID。",
+    "zh-Hans": "此 Fabric 已无可用的自动 Group Key Set ID。"
+  },
+  "invalid_group_key": {
+    "en": "The generated Group Key was invalid.",
+    "zh-Hant": "產生的 Group Key 無效。",
+    "zh-Hans": "产生的 Group Key 无效。"
+  },
+  "group_key_rejected": {
+    "en": "A participating device rejected the Group Key write.",
+    "zh-Hant": "參與裝置拒絕寫入 Group Key。",
+    "zh-Hans": "参与装置拒绝写入 Group Key。"
+  },
+  "group_key_unverified": {
+    "en": "A participating device did not confirm its Group Key mapping.",
+    "zh-Hant": "參與裝置未確認 Group Key 對應。",
+    "zh-Hans": "参与装置未确认 Group Key 对应。"
+  },
+  "group_key_changed": {
+    "en": "The managed Group Key mapping changed and cannot be safely removed.",
+    "zh-Hant": "受管理的 Group Key 對應已變更，無法安全移除。",
+    "zh-Hans": "受管理的 Group Key 对应已变更，无法安全移除。"
+  },
+  "group_key_remove_unverified": {
+    "en": "A participant did not confirm its Group Key mapping removal.",
+    "zh-Hant": "參與裝置未確認 Group Key 對應已移除。",
+    "zh-Hans": "参与装置未确认 Group Key 对应已移除。"
+  },
+  "key_set_remove_rejected": {
+    "en": "A participant rejected Group Key Set removal.",
+    "zh-Hant": "參與裝置拒絕移除 Group Key Set。",
+    "zh-Hans": "参与装置拒绝移除 Group Key Set。"
+  },
+  "group_commands_unsupported": {
+    "en": "This Home Assistant Matter client cannot send native Group commands.",
+    "zh-Hant": "此 Home Assistant Matter 用戶端無法傳送原生群組指令。",
+    "zh-Hans": "此 Home Assistant Matter 用户端无法传送原生群组指令。"
+  },
+  "membership_rejected": {
+    "en": "A selected target rejected automatic group membership.",
+    "zh-Hant": "選取的目標拒絕加入自動群組。",
+    "zh-Hans": "选取的目标拒绝加入自动群组。"
+  },
+  "membership_unverified": {
+    "en": "A selected target did not confirm automatic group membership.",
+    "zh-Hant": "選取的目標未確認已加入自動群組。",
+    "zh-Hans": "选取的目标未确认已加入自动群组。"
+  },
+  "group_remove_rejected": {
+    "en": "A managed group member rejected group removal.",
+    "zh-Hant": "受管理群組的成員拒絕退出群組。",
+    "zh-Hans": "受管理群组的成员拒绝退出群组。"
+  },
+  "group_remove_unverified": {
+    "en": "A managed group member did not confirm group removal.",
+    "zh-Hant": "受管理群組的成員未確認已退出群組。",
+    "zh-Hans": "受管理群组的成员未确认已退出群组。"
+  },
+  "member_admin_missing": {
+    "en": "A selected target ACL cannot be safely updated because no administrator entry was found.",
+    "zh-Hant": "選取目標的 ACL 沒有管理員規則，無法安全更新。",
+    "zh-Hans": "选取目标的 ACL 没有管理员规则，无法安全更新。"
+  },
+  "group_acl_unverified": {
+    "en": "A selected target did not confirm the group access rule.",
+    "zh-Hant": "選取的目標未確認群組存取規則。",
+    "zh-Hans": "选取的目标未确认群组存取规则。"
+  },
+  "wildcard_acl_unsafe": {
+    "en": "A managed group has a wildcard ACL rule that cannot be safely removed.",
+    "zh-Hant": "受管理群組含有萬用 ACL 規則，無法安全移除。",
+    "zh-Hans": "受管理群组含有万用 ACL 规则，无法安全移除。"
+  },
+  "group_acl_remove_unverified": {
+    "en": "A member did not confirm removal of the group access rule.",
+    "zh-Hant": "成員未確認群組存取規則已移除。",
+    "zh-Hans": "成员未确认群组存取规则已移除。"
+  },
+  "matter_client_unavailable": {
+    "en": "Home Assistant's Matter client is not available.",
+    "zh-Hant": "Home Assistant 的 Matter 用戶端無法使用。",
+    "zh-Hans": "Home Assistant 的 Matter 用户端无法使用。"
+  },
+  "acl_full": {
+    "en": "The target ACL is full ({used}/{maximum}). Reclaim an unused ACL rule before creating this Binding.",
+    "zh-Hant": "目標 ACL 已滿（{used}/{maximum}），請先回收未使用的 ACL 規則，再建立此 Binding。",
+    "zh-Hans": "目标 ACL 已满（{used}/{maximum}），请先回收未使用的 ACL 规则，再建立此 Binding。"
+  },
+  "acl_shape_unsupported": {
+    "en": "The target Access Control list has an unsupported entry shape at entry {index}: {shape} (table: {table}).",
+    "zh-Hant": "目標存取控制清單的第 {index} 筆格式不受支援：{shape}（表格：{table}）。",
+    "zh-Hans": "目标存取控制清单的第 {index} 笔格式不受支援：{shape}（表格：{table}）。"
+  },
+  "fabric_read_failed": {
+    "en": "The source fabric index could not be read.",
+    "zh-Hant": "無法讀取來源的 Fabric 索引。",
+    "zh-Hans": "无法读取来源的 Fabric 索引。"
+  },
+  "fabric_invalid": {
+    "en": "The source fabric index is invalid.",
+    "zh-Hant": "來源的 Fabric 索引無效。",
+    "zh-Hans": "来源的 Fabric 索引无效。"
+  },
+  "acl_admin_required": {
+    "en": "Refusing to write an ACL without an administrator entry.",
+    "zh-Hant": "拒絕寫入不含管理員規則的 ACL。",
+    "zh-Hans": "拒绝写入不含管理员规则的 ACL。"
+  },
+  "acl_write_unsupported": {
+    "en": "This Home Assistant Matter client cannot safely update ACLs.",
+    "zh-Hant": "此 Home Assistant Matter 用戶端無法安全更新 ACL。",
+    "zh-Hans": "此 Home Assistant Matter 用户端无法安全更新 ACL。"
+  },
+  "acl_write_rejected": {
+    "en": "The target device rejected the Access Control update.",
+    "zh-Hant": "目標裝置拒絕更新存取控制規則。",
+    "zh-Hans": "目标装置拒绝更新存取控制规则。"
+  },
+  "binding_write_unverified": {
+    "en": "The Binding write was not verified on the source device.",
+    "zh-Hant": "尚未在來源裝置確認 Binding 寫入結果。",
+    "zh-Hans": "尚未在来源装置确认 Binding 写入结果。"
+  },
+  "binding_write_acl_added": {
+    "en": "The Binding write was not verified on the source device. Target access was added; review the target ACL before retrying.",
+    "zh-Hant": "尚未在來源裝置確認 Binding 寫入結果。目標存取權限已新增，重試前請先檢查目標 ACL。",
+    "zh-Hans": "尚未在来源装置确认 Binding 写入结果。目标存取权限已新增，重试前请先检查目标 ACL。"
+  },
+  "plan_expired": {
+    "en": "This review expired. Generate a new plan before writing.",
+    "zh-Hant": "此檢視計畫已過期，寫入前請產生新計畫。",
+    "zh-Hans": "此检视计划已过期，写入前请产生新计划。"
+  },
+  "plan_kind_mismatch": {
+    "en": "This review does not match the requested native Matter operation.",
+    "zh-Hant": "此檢視計畫與要求的原生 Matter 操作不符。",
+    "zh-Hans": "此检视计划与要求的原生 Matter 操作不符。"
+  },
+  "bulk_selection_size": {
+    "en": "Select between 1 and 200 relationships.",
+    "zh-Hant": "請選擇 1 到 200 條控制關係。",
+    "zh-Hans": "请选择 1 到 200 条控制关系。"
+  },
+  "bulk_selection_changed": {
+    "en": "A selected relationship changed. Refresh and review again.",
+    "zh-Hant": "選取的控制關係已變更，請重新整理後再檢視。",
+    "zh-Hans": "选取的控制关系已变更，请重新整理后再检视。"
+  },
+  "bulk_source_unavailable": {
+    "en": "A selected source is unavailable.",
+    "zh-Hant": "選取的來源無法使用。",
+    "zh-Hans": "选取的来源无法使用。"
+  },
+  "bulk_target_incomplete": {
+    "en": "A selected target is incomplete. Refresh first.",
+    "zh-Hant": "選取的目標資料不完整，請先重新整理。",
+    "zh-Hans": "选取的目标资料不完整，请先重新整理。"
+  },
+  "bulk_group_incomplete": {
+    "en": "A selected group is incomplete. Refresh first.",
+    "zh-Hant": "選取的群組資料不完整，請先重新整理。",
+    "zh-Hans": "选取的群组资料不完整，请先重新整理。"
+  },
+  "bulk_target_unsupported": {
+    "en": "The selected target type is not supported.",
+    "zh-Hant": "不支援選取的目標類型。",
+    "zh-Hans": "不支援选取的目标类型。"
+  },
+  "bulk_table_changed": {
+    "en": "The source Binding table changed. Refresh and review again.",
+    "zh-Hant": "來源 Binding 表已變更，請重新整理後再檢視。",
+    "zh-Hans": "来源 Binding 表已变更，请重新整理后再检视。"
+  },
+  "admin_only": {
+    "en": "Matter Binding Studio is admin-only.",
+    "zh-Hant": "Matter Binding Studio 僅限管理員使用。",
+    "zh-Hans": "Matter Binding Studio 仅限管理员使用。"
+  },
+  "operation_failed": {
+    "en": "The Matter device operation could not be completed. Confirm the device is online, then refresh and retry.",
+    "zh-Hant": "無法完成 Matter 裝置操作，請確認裝置在線，重新整理後再試。",
+    "zh-Hans": "无法完成 Matter 装置操作，请确认装置在线，重新整理后再试。"
+  },
+  "unexpected_error": {
+    "en": "The requested Matter operation failed.",
+    "zh-Hant": "要求的 Matter 操作失敗。",
+    "zh-Hans": "要求的 Matter 操作失败。"
+  },
+  "matter_unavailable": {
+    "en": "Matter integration is not currently available.",
+    "zh-Hant": "Matter 整合目前無法使用。",
+    "zh-Hans": "Matter 整合目前无法使用。"
+  },
+  "inventory_unavailable": {
+    "en": "Matter node inventory is temporarily unavailable.",
+    "zh-Hant": "Matter 節點清單暫時無法使用。",
+    "zh-Hans": "Matter 节点清单暂时无法使用。"
+  },
+  "bindings_read_failed": {
+    "en": "Could not read bindings for {name}.",
+    "zh-Hant": "無法讀取 {name} 的 Binding。",
+    "zh-Hans": "无法读取 {name} 的 Binding。"
+  },
+  "step_read_acl": {
+    "en": "Read the latest target ACL table.",
+    "zh-Hant": "讀取最新的目標 ACL 表。",
+    "zh-Hans": "读取最新的目标 ACL 表。"
+  },
+  "step_remove_acl": {
+    "en": "Remove only the {count} reviewed unused operate rule(s).",
+    "zh-Hant": "僅移除已檢視的 {count} 筆未使用操作規則。",
+    "zh-Hans": "仅移除已检视的 {count} 笔未使用操作规则。"
+  },
+  "step_keep_acl": {
+    "en": "Keep every administrator and in-use ACL rule.",
+    "zh-Hant": "保留所有管理員與使用中的 ACL 規則。",
+    "zh-Hans": "保留所有管理员与使用中的 ACL 规则。"
+  },
+  "step_write_acl": {
+    "en": "Write the remaining ACL table and read it back.",
+    "zh-Hant": "寫入剩餘 ACL 表並回讀確認。",
+    "zh-Hans": "写入剩余 ACL 表并回读确认。"
+  },
+  "step_check_idle": {
+    "en": "Re-read every source Binding table to confirm this group is idle.",
+    "zh-Hant": "重新讀取所有來源 Binding 表，確認群組已閒置。",
+    "zh-Hans": "重新读取所有来源 Binding 表，确认群组已闲置。"
+  },
+  "step_remove_group_acl": {
+    "en": "Remove only this group's operate ACL targets from its recorded members.",
+    "zh-Hant": "只從已記錄成員移除此群組的操作 ACL 目標。",
+    "zh-Hans": "只从已记录成员移除此群组的操作 ACL 目标。"
+  },
+  "step_remove_members": {
+    "en": "Remove this group from its recorded member endpoints and read membership back.",
+    "zh-Hant": "從已記錄成員端點移除群組，並回讀成員資格。",
+    "zh-Hans": "从已记录成员端点移除群组，并回读成员资格。"
+  },
+  "step_remove_keys": {
+    "en": "Remove this group's Group Key mapping and Key Set from every participant.",
+    "zh-Hant": "從所有參與裝置移除此群組的 Group Key 對應與 Key Set。",
+    "zh-Hans": "从所有参与装置移除此群组的 Group Key 对应与 Key Set。"
+  },
+  "step_remove_metadata": {
+    "en": "Remove Studio metadata only after the native cleanup has verified.",
+    "zh-Hant": "僅在原生清理驗證完成後移除 Studio 中繼資料。",
+    "zh-Hans": "仅在原生清理验证完成后移除 Studio 中继资料。"
+  },
+  "step_read_binding_acl": {
+    "en": "Read the latest Binding list and target ACL capacity.",
+    "zh-Hant": "讀取最新 Binding 表與目標 ACL 容量。",
+    "zh-Hans": "读取最新 Binding 表与目标 ACL 容量。"
+  },
+  "step_grant_source": {
+    "en": "Grant the source device operate access on the target.",
+    "zh-Hant": "授予來源裝置操作目標的權限。",
+    "zh-Hans": "授予来源装置操作目标的权限。"
+  },
+  "step_write_binding": {
+    "en": "Write the source Binding Cluster list.",
+    "zh-Hant": "寫入來源的 Binding Cluster 表。",
+    "zh-Hans": "写入来源的 Binding Cluster 表。"
+  },
+  "step_verify_binding": {
+    "en": "Read the Binding Cluster back from the source device.",
+    "zh-Hant": "從來源裝置回讀 Binding Cluster 確認。",
+    "zh-Hans": "从来源装置回读 Binding Cluster 确认。"
+  },
+  "step_read_group_capacity": {
+    "en": "Read the latest Binding, ACL, group capacity, and group key maps.",
+    "zh-Hant": "讀取最新 Binding、ACL、群組容量與 Group Key 對應。",
+    "zh-Hans": "读取最新 Binding、ACL、群组容量与 Group Key 对应。"
+  },
+  "step_provision_key": {
+    "en": "Provision one new Group Key on the control source and each target device.",
+    "zh-Hant": "在控制來源與各目標裝置佈建新的 Group Key。",
+    "zh-Hans": "在控制来源与各目标装置布建新的 Group Key。"
+  },
+  "step_add_members": {
+    "en": "Add each selected target endpoint to the automatic native group.",
+    "zh-Hant": "將選取的目標端點加入自動原生群組。",
+    "zh-Hans": "将选取的目标端点加入自动原生群组。"
+  },
+  "step_grant_group": {
+    "en": "Grant group operate access only to member endpoints that support each selected capability.",
+    "zh-Hant": "只授予支援選取能力的成員端點對應的群組操作權限。",
+    "zh-Hans": "只授予支援选取能力的成员端点对应的群组操作权限。"
+  },
+  "step_replace_direct": {
+    "en": "Replace matching direct bindings only after all group provisioning succeeds.",
+    "zh-Hant": "所有群組佈建成功後，才替換對應的直接 Binding。",
+    "zh-Hans": "所有群组布建成功后，才替换对应的直接 Binding。"
+  },
+  "step_verify_group": {
+    "en": "Read the source Binding Cluster and target group configuration back from the devices.",
+    "zh-Hant": "從裝置回讀來源 Binding Cluster 與目標群組設定。",
+    "zh-Hans": "从装置回读来源 Binding Cluster 与目标群组设定。"
+  },
+  "step_read_source": {
+    "en": "Read the latest source Binding Cluster list.",
+    "zh-Hant": "讀取最新來源 Binding Cluster 表。",
+    "zh-Hans": "读取最新来源 Binding Cluster 表。"
+  },
+  "step_remove_relationship": {
+    "en": "Remove only the entries that match this displayed relationship.",
+    "zh-Hant": "僅移除對應此控制關係的設定。",
+    "zh-Hans": "仅移除对应此控制关系的设定。"
+  },
+  "step_keep_group": {
+    "en": "Keep the native group, Group Key, membership, and ACLs unchanged.",
+    "zh-Hant": "保留原生群組、Group Key、成員資格與 ACL。",
+    "zh-Hans": "保留原生群组、Group Key、成员资格与 ACL。"
+  },
+  "step_keep_target_acl": {
+    "en": "Keep target ACLs unchanged.",
+    "zh-Hant": "保留目標 ACL 不變。",
+    "zh-Hans": "保留目标 ACL 不变。"
+  },
+  "step_write_remaining": {
+    "en": "Write the complete remaining Binding Cluster list.",
+    "zh-Hant": "寫入完整的剩餘 Binding Cluster 表。",
+    "zh-Hans": "写入完整的剩余 Binding Cluster 表。"
+  },
+  "all_subjects": {
+    "en": "All subjects",
+    "zh-Hant": "所有來源",
+    "zh-Hans": "所有来源"
+  },
+  "unknown_subject": {
+    "en": "Unknown subject",
+    "zh-Hant": "未知來源",
+    "zh-Hans": "未知来源"
+  },
+  "unknown_group": {
+    "en": "Unknown native group",
+    "zh-Hant": "未知原生群組",
+    "zh-Hans": "未知原生群组"
+  },
+  "unknown_node": {
+    "en": "Unknown Matter node",
+    "zh-Hant": "未知 Matter 節點",
+    "zh-Hans": "未知 Matter 节点"
+  },
+  "all_endpoints": {
+    "en": "All endpoints",
+    "zh-Hant": "所有端點",
+    "zh-Hans": "所有端点"
+  },
+  "all_capabilities": {
+    "en": "All capabilities",
+    "zh-Hant": "所有能力",
+    "zh-Hans": "所有能力"
+  },
+  "capability_onoff": {
+    "en": "On / Off",
+    "zh-Hant": "開關",
+    "zh-Hans": "开关"
+  },
+  "capability_brightness": {
+    "en": "Brightness",
+    "zh-Hant": "亮度",
+    "zh-Hans": "亮度"
+  },
+  "capability_color_temperature": {
+    "en": "Color temperature",
+    "zh-Hant": "色溫",
+    "zh-Hans": "色温"
+  },
+  "capability_other": {
+    "en": "Other capability",
+    "zh-Hant": "其他能力",
+    "zh-Hans": "其他能力"
+  }
+}

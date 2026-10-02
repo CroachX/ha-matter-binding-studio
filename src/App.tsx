@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import BindingList from "./BindingList";
-import { copy, type Copy, type Language } from "./copy";
+import { errorMessage, formatMessage, resolveLanguage, studioCall, type Message } from "./messages";
+import { copy, type Copy } from "./copy";
 
 export interface HomeAssistant {
   callWS<T>(message: { type: string; [key: string]: unknown }): Promise<T>;
@@ -59,7 +60,7 @@ export type StudioSnapshot = {
   relationships: Relationship[];
   native_control_sets: ControlSet[];
   capacities: Capacity[];
-  warnings: string[];
+  warnings: Message[];
 };
 
 type UnicastPlan = {
@@ -72,7 +73,7 @@ type UnicastPlan = {
   existing_binding_count: number;
   acl: "will_add" | "already_granted";
   acl_capacity?: AclCapacity;
-  steps: string[];
+  steps: Message[];
 };
 
 type GroupcastPlan = {
@@ -85,7 +86,7 @@ type GroupcastPlan = {
   coverage: CapabilityCoverage[];
   replaces_direct_binding: boolean;
   acl_capacity?: Array<AclCapacity & { target: Endpoint }>;
-  steps: string[];
+  steps: Message[];
 };
 
 type BindingPlan = UnicastPlan | GroupcastPlan;
@@ -101,7 +102,7 @@ type ApplyResult = {
   success: boolean;
   verified: boolean;
   repair_needed?: boolean;
-  message: string;
+  message: Message;
 };
 
 
@@ -114,15 +115,15 @@ type AclCapacity = {
 };
 
 type AclTarget = {
-  endpoint: string;
-  capability: string;
+  endpoint: Message;
+  capability: Message;
 };
 
 type AclEntry = {
   entry_index: number;
   kind: "administrator" | "operate";
   auth_mode: "case" | "group" | "other";
-  subjects: string[];
+  subjects: Message[];
   targets: AclTarget[];
   usage: {
     state: "protected" | "used" | "unused" | "unknown";
@@ -144,7 +145,7 @@ type AclRemovalPlan = {
   entry: AclEntry;
   entries?: AclEntry[];
   capacity_before: AclCapacity;
-  steps: string[];
+  steps: Message[];
 };
 
 type GroupCleanupPlan = {
@@ -155,7 +156,7 @@ type GroupCleanupPlan = {
   source: Endpoint;
   members: Endpoint[];
   clusters: number[];
-  steps: string[];
+  steps: Message[];
 };
 
 export default function App({ hass }: { hass?: HomeAssistant }) {
@@ -181,7 +182,7 @@ export default function App({ hass }: { hass?: HomeAssistant }) {
     setReadFailed(false);
     try {
       setSnapshot(
-        await activeHass.callWS<StudioSnapshot>({
+        await studioCall<StudioSnapshot>(activeHass, {
           type: "matter_binding_studio/get_snapshot",
         }),
       );
@@ -221,9 +222,9 @@ export default function App({ hass }: { hass?: HomeAssistant }) {
 
         {!hass ? <p className="mbs-notice">{t.notConnected}</p> : null}
         {readFailed ? <p className="mbs-warning">{t.readFailed}</p> : null}
-        {snapshot?.warnings.map((warning) => (
-          <p className="mbs-warning" key={warning}>
-            {warning}
+        {snapshot?.warnings.map((warning, index) => (
+          <p className="mbs-warning" key={index}>
+            {formatMessage(warning, t)}
           </p>
         ))}
 
@@ -276,7 +277,7 @@ function BindingComposer({
   const [working, setWorking] = useState(false);
   useEffect(() => { onBusy(working); }, [working, onBusy]);
   const [confirmed, setConfirmed] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<Message | null>(null);
   const [messageIsError, setMessageIsError] = useState(false);
 
   const sources = snapshot.devices.filter((device) => device.can_bind);
@@ -337,7 +338,7 @@ function BindingComposer({
     setMessage(null);
     try {
       const nextPlan = selectedTargets.length === 1
-        ? await hass.callWS<UnicastPlan>({
+        ? await studioCall<UnicastPlan>(hass, {
             type: "matter_binding_studio/prepare_unicast",
             source_node_id: source.node_id,
             source_endpoint_id: source.endpoint_id,
@@ -345,7 +346,7 @@ function BindingComposer({
             target_endpoint_id: selectedTargets[0].endpoint_id,
             clusters,
           })
-        : await hass.callWS<GroupcastPlan>({
+        : await studioCall<GroupcastPlan>(hass, {
             type: "matter_binding_studio/prepare_groupcast",
             source_node_id: source.node_id,
             source_endpoint_id: source.endpoint_id,
@@ -370,7 +371,7 @@ function BindingComposer({
     setWorking(true);
     setMessage(null);
     try {
-      const result = await hass.callWS<ApplyResult>({
+      const result = await studioCall<ApplyResult>(hass, {
         type: plan.route === "direct"
           ? "matter_binding_studio/apply_unicast"
           : "matter_binding_studio/apply_groupcast",
@@ -485,7 +486,7 @@ function BindingComposer({
             </>
           ) : null}
           <ul>
-            {plan.steps.map((step) => <li key={step}>{step}</li>)}
+            {plan.steps.map((step, index) => <li key={index}>{formatMessage(step, t)}</li>)}
           </ul>
           <p className="mbs-meta">
             {plan.route === "direct"
@@ -508,7 +509,7 @@ function BindingComposer({
           </button>
         </div>
       ) : null}
-      {message ? <p className={messageIsError ? "mbs-warning" : "mbs-success"}>{message}</p> : null}
+      {message ? <p className={messageIsError ? "mbs-warning" : "mbs-success"}>{formatMessage(message, t)}</p> : null}
     </section>
   );
 }
@@ -618,22 +619,7 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "object" && error !== null) {
-    const candidate = error as {
-      message?: unknown;
-      error?: { message?: unknown };
-    };
-    if (typeof candidate.message === "string" && candidate.message) {
-      return candidate.message;
-    }
-    if (typeof candidate.error?.message === "string" && candidate.error.message) {
-      return candidate.error.message;
-    }
-  }
-  return "The requested Matter operation failed.";
-}
+
 
 function StudioData({
   hass,
@@ -649,7 +635,7 @@ function StudioData({
   const [groupCleanupPlan, setGroupCleanupPlan] = useState<GroupCleanupPlan | null>(null);
   const [groupCleanupConfirmed, setGroupCleanupConfirmed] = useState(false);
   const [groupCleanupWorking, setGroupCleanupWorking] = useState(false);
-  const [groupCleanupMessage, setGroupCleanupMessage] = useState<string | null>(null);
+  const [groupCleanupMessage, setGroupCleanupMessage] = useState<Message | null>(null);
   const [groupCleanupMessageIsError, setGroupCleanupMessageIsError] = useState(false);
 
   const reviewGroupCleanup = async (controlSet: ControlSet) => {
@@ -663,7 +649,7 @@ function StudioData({
     setGroupCleanupWorking(true);
     setGroupCleanupMessage(null);
     try {
-      setGroupCleanupPlan(await hass.callWS<GroupCleanupPlan>({
+      setGroupCleanupPlan(await studioCall<GroupCleanupPlan>(hass, {
         type: "matter_binding_studio/prepare_cleanup_group",
         group_id: controlSet.group_id,
       }));
@@ -681,7 +667,7 @@ function StudioData({
     setGroupCleanupWorking(true);
     setGroupCleanupMessage(null);
     try {
-      const result = await hass.callWS<ApplyResult>({
+      const result = await studioCall<ApplyResult>(hass, {
         type: "matter_binding_studio/apply_cleanup_group",
         plan_id: groupCleanupPlan.plan_id,
         confirm: true,
@@ -732,7 +718,7 @@ function StudioData({
             <p>{groupCleanupPlan.name}</p>
             <MemberList members={groupCleanupPlan.members} />
             <CapabilityList clusters={groupCleanupPlan.clusters} t={t} />
-            <ul>{groupCleanupPlan.steps.map((step) => <li key={step}>{step}</li>)}</ul>
+            <ul>{groupCleanupPlan.steps.map((step, index) => <li key={index}>{formatMessage(step, t)}</li>)}</ul>
             <label className="mbs-confirm">
               <input
                 type="checkbox"
@@ -765,7 +751,7 @@ function StudioData({
         ) : null}
         {groupCleanupMessage ? (
           <p className={groupCleanupMessageIsError ? "mbs-warning" : "mbs-success"}>
-            {groupCleanupMessage}
+            {formatMessage(groupCleanupMessage, t)}
           </p>
         ) : null}
       </section>
@@ -824,7 +810,7 @@ function AclInspector({
   const [failed, setFailed] = useState(false);
   const [removalPlan, setRemovalPlan] = useState<AclRemovalPlan | null>(null);
   const [removalConfirmed, setRemovalConfirmed] = useState(false);
-  const [removalMessage, setRemovalMessage] = useState<string | null>(null);
+  const [removalMessage, setRemovalMessage] = useState<Message | null>(null);
   const [removalFailed, setRemovalFailed] = useState(false);
   const [selectedEntryIndexes, setSelectedEntryIndexes] = useState<number[]>([]);
   const selectedTarget = targets.find((target) => endpointKey(target) === targetKey);
@@ -837,7 +823,7 @@ function AclInspector({
     setWorking(true);
     setFailed(false);
     try {
-      setOverview(await hass.callWS<AclOverview>({
+      setOverview(await studioCall<AclOverview>(hass, {
         type: "matter_binding_studio/get_acl_overview",
         target_node_id: selectedTarget.node_id,
         target_endpoint_id: selectedTarget.endpoint_id,
@@ -864,7 +850,7 @@ function AclInspector({
     setRemovalMessage(null);
     setRemovalFailed(false);
     try {
-      setRemovalPlan(await hass.callWS<AclRemovalPlan>({
+      setRemovalPlan(await studioCall<AclRemovalPlan>(hass, {
         type: "matter_binding_studio/prepare_remove_acl",
         target_node_id: selectedTarget.node_id,
         target_endpoint_id: selectedTarget.endpoint_id,
@@ -884,7 +870,7 @@ function AclInspector({
     setWorking(true);
     setRemovalMessage(null);
     try {
-      const result = await hass.callWS<ApplyResult>({
+      const result = await studioCall<ApplyResult>(hass, {
         type: "matter_binding_studio/apply_remove_acl",
         plan_id: removalPlan.plan_id,
         confirm: true,
@@ -993,7 +979,7 @@ function AclInspector({
             <AclEntryRow entry={entry} key={entry.entry_index} t={t} />
           ))}
           <p className="mbs-meta">{t.aclRemovalKeepsInUse}</p>
-          <ul>{removalPlan.steps.map((step) => <li key={step}>{step}</li>)}</ul>
+          <ul>{removalPlan.steps.map((step, index) => <li key={index}>{formatMessage(step, t)}</li>)}</ul>
           <label className="mbs-confirm">
             <input
               type="checkbox"
@@ -1024,7 +1010,7 @@ function AclInspector({
           </div>
         </div>
       ) : null}
-      {removalMessage ? <p className={removalFailed ? "mbs-warning" : "mbs-success"}>{removalMessage}</p> : null}
+      {removalMessage ? <p className={removalFailed ? "mbs-warning" : "mbs-success"}>{formatMessage(removalMessage, t)}</p> : null}
     </section>
   );
 }
@@ -1078,11 +1064,11 @@ function AclEntryRow({
       <div className="mbs-acl-details">
         <div>
           <small>{t.aclSubjects}</small>
-          <p>{entry.subjects.join(", ")}</p>
+          <p>{entry.subjects.map(subject => formatMessage(subject, t)).join(", ")}</p>
         </div>
         <div>
           <small>{t.aclTargets}</small>
-          <p>{entry.targets.map((target) => `${target.endpoint} · ${target.capability}`).join("；")}</p>
+          <p>{entry.targets.map((target) => `${formatMessage(target.endpoint, t)} · ${formatMessage(target.capability, t)}`).join("；")}</p>
         </div>
       </div>
       {entry.usage.relationship_names.length ? (
@@ -1243,10 +1229,7 @@ function Empty({ text }: { text: string }) {
   return <p className="mbs-empty">{text}</p>;
 }
 
-function resolveLanguage(hass?: HomeAssistant): Language {
-  const language = hass?.locale?.language ?? hass?.language ?? "en";
-  return language.toLowerCase().startsWith("zh") ? "zh-Hant" : "en";
-}
+
 
 export function clusterName(cluster: number, t: Copy): string {
   if (cluster === 6) return t.onOff;

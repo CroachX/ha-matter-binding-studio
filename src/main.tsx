@@ -1,4 +1,4 @@
-import { StrictMode } from "react";
+import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import App, { type HomeAssistant, type StudioSnapshot } from "./App";
 import "./styles.css";
@@ -300,6 +300,7 @@ const previewHass: HomeAssistant = {
           entries_to_add: 1,
         },
         steps: ["Preview only — no device will be changed."],
+        steps_i18n: [{ code: "step_read_binding_acl" }, { code: "step_grant_source" }, { code: "step_write_binding" }, { code: "step_verify_binding" }],
       } as T;
     }
     if (message.type === "matter_binding_studio/prepare_groupcast") {
@@ -328,6 +329,7 @@ const previewHass: HomeAssistant = {
         })),
         replaces_direct_binding: false,
         steps: ["Preview only — no group, Group Key, ACL, or Binding will be changed."],
+        steps_i18n: [{ code: "step_read_group_capacity" }, { code: "step_provision_key" }, { code: "step_add_members" }, { code: "step_grant_group" }, { code: "step_replace_direct" }, { code: "step_verify_group" }],
       } as T;
     }
     if (message.type === "matter_binding_studio/prepare_remove_binding") {
@@ -361,8 +363,29 @@ const previewHass: HomeAssistant = {
   },
 };
 
-createRoot(document.getElementById("root")!).render(
+function Preview() {
+  const [language, setLanguage] = useState("zh-Hant");
+  const [scenario, setScenario] = useState("normal");
+  const hass: HomeAssistant = { ...previewHass, locale: { language }, async callWS<T>(request: { type: string; [key: string]: unknown }): Promise<T> {
+    if (scenario === "acl-full" && request.type.includes("/prepare_")) {
+      throw { code: "plan_failed", message: "The target ACL is full (3/3).", studio_message: { code: "acl_full", params: { used: 3, maximum: 3 } } };
+    }
+    return previewHass.callWS<T>(request);
+  } };
+  return <>
+    <div style={{ padding: 12, display: "flex", flexWrap: "wrap", gap: 12 }}>
+      <span>Preview only · 模擬資料，不連線 HA</span>
+      <select aria-label="Preview language" value={language} onChange={e => setLanguage(e.target.value)}><option value="zh-Hant">繁體中文</option><option value="zh-Hans">简体中文</option><option value="en">English</option></select>
+      <select aria-label="Preview scenario" value={scenario} onChange={e => setScenario(e.target.value)}><option value="normal">Normal</option><option value="acl-full">ACL full error</option></select>
+    </div>
+    <App hass={hass} />
+  </>;
+}
+
+const previewRoot = createRoot(document.getElementById("root")!);
+import.meta.hot?.dispose(() => previewRoot.unmount());
+previewRoot.render(
   <StrictMode>
-    <App hass={previewHass} />
+    <Preview />
   </StrictMode>,
 );

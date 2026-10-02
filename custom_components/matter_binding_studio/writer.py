@@ -17,6 +17,8 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .messages import message
+
 from .const import (
     ATTR_ACCESS_CONTROL_ENTRIES_PER_FABRIC,
     ATTR_ACL,
@@ -75,7 +77,7 @@ async def async_get_acl_overview(
         snapshot.get("devices", []), target_node_id, target_endpoint_id
     )
     if target is None or not target.get("can_be_target"):
-        raise StudioWriteError("Choose a valid Matter output target.")
+        raise StudioWriteError(message("invalid_target"))
     client = _require_client(hass)
     entries = await _read_acl(client, target_node_id)
     capacity = await _read_acl_capacity(client, target_node_id, entries)
@@ -122,14 +124,14 @@ async def async_prepare_remove_acl(
         snapshot.get("devices", []), target_node_id, target_endpoint_id
     )
     if target is None or not target.get("can_be_target"):
-        raise StudioWriteError("Choose a valid Matter output target.")
+        raise StudioWriteError(message("invalid_target"))
     client = _require_client(hass)
     entries = await _read_acl(client, target_node_id)
     selected_indexes = _normalise_acl_removal_indexes(
         entry_index=entry_index, entry_indexes=entry_indexes
     )
     if not selected_indexes:
-        raise StudioWriteError("Choose at least one ACL entry to reclaim.")
+        raise StudioWriteError(message("choose_acl"))
 
     endpoint_names = {
         int(endpoint["endpoint_id"]): _endpoint_presentation_name(endpoint)
@@ -147,7 +149,7 @@ async def async_prepare_remove_acl(
     for index in selected_indexes:
         if index < 0 or index >= len(entries):
             raise StudioWriteError(
-                "One selected ACL entry changed or no longer exists. Refresh first."
+                message("acl_entry_changed")
             )
         public_entry = _public_acl_entry(
             entries[index],
@@ -160,7 +162,7 @@ async def async_prepare_remove_acl(
         )
         if not public_entry["usage"]["safe_to_reclaim"]:
             raise StudioWriteError(
-                "Only unused, non-administrator ACL entries with concrete source and target rules can be reclaimed."
+                message("acl_reclaim_unsafe")
             )
         public_entries.append(public_entry)
 
@@ -191,10 +193,10 @@ async def async_prepare_remove_acl(
             await _read_acl_capacity(client, target_node_id, entries)
         ),
         "steps": [
-            "Read the latest target ACL table.",
-            f"Remove only the {len(public_entries)} reviewed unused operate rule(s).",
-            "Keep every administrator and in-use ACL rule.",
-            "Write the remaining ACL table and read it back.",
+            message("step_read_acl"),
+            message("step_remove_acl", count=len(public_entries)),
+            message("step_keep_acl"),
+            message("step_write_acl"),
         ],
     }
 
@@ -207,7 +209,7 @@ async def async_apply_remove_acl(hass: HomeAssistant, *, plan_id: str) -> dict[s
     current = await _read_acl(client, target_node_id)
     if _acl_signature(current) != _acl_signature(plan["acl_before"]):
         raise StudioWriteError(
-            "The target ACL changed after review. Refresh and review a new reclaim plan."
+            message("acl_changed")
         )
     try:
         await _write_acl(client, target_node_id, list(plan["acl_after"]))
@@ -217,7 +219,7 @@ async def async_apply_remove_acl(hass: HomeAssistant, *, plan_id: str) -> dict[s
                 return {
                     "success": True,
                     "verified": True,
-                    "message": f"{len(plan.get('entries', [plan['entry']]))} unused target ACL rule(s) were reclaimed and read back.",
+                    "message": message("acl_reclaimed", count=len(plan.get('entries', [plan['entry']]))),
                     "target": plan["target"],
                 }
             await asyncio.sleep(_VERIFY_DELAY_SECONDS)
@@ -227,7 +229,7 @@ async def async_apply_remove_acl(hass: HomeAssistant, *, plan_id: str) -> dict[s
         "success": False,
         "verified": False,
         "repair_needed": True,
-        "message": "The ACL reclaim could not be verified. Refresh before retrying or changing this target.",
+        "message": message("acl_reclaim_unverified"),
         "target": plan["target"],
     }
 
@@ -248,21 +250,21 @@ async def async_prepare_cleanup_group(
     await store.async_load()
     group = store.get(group_id)
     if group is None:
-        raise StudioWriteError("This native group is not managed by Matter Binding Studio.")
+        raise StudioWriteError(message("group_unmanaged"))
     snapshot = await async_get_snapshot(hass)
     _require_group_is_idle(snapshot, group_id)
     source = _find_endpoint(
         snapshot.get("devices", []), group.source_node_id, group.source_endpoint_id
     )
     if source is None:
-        raise StudioWriteError("The managed group's source endpoint is no longer available.")
+        raise StudioWriteError(message("group_source_missing"))
     members = [
         _find_endpoint(snapshot.get("devices", []), member["node_id"], member["endpoint_id"])
         for member in group.members
     ]
     if any(member is None for member in members):
         raise StudioWriteError(
-            "One or more managed group members are no longer available. Keep this group marked for repair."
+            message("group_members_missing")
         )
     plan_id = secrets.token_urlsafe(24)
     _pending_plans(hass)[plan_id] = {
@@ -283,11 +285,11 @@ async def async_prepare_cleanup_group(
         "members": [member for member in members if member is not None],
         "clusters": list(group.clusters),
         "steps": [
-            "Re-read every source Binding table to confirm this group is idle.",
-            "Remove only this group's operate ACL targets from its recorded members.",
-            "Remove this group from its recorded member endpoints and read membership back.",
-            "Remove this group's Group Key mapping and Key Set from every participant.",
-            "Remove Studio metadata only after the native cleanup has verified.",
+            message("step_check_idle"),
+            message("step_remove_group_acl"),
+            message("step_remove_members"),
+            message("step_remove_keys"),
+            message("step_remove_metadata"),
         ],
     }
 
@@ -306,7 +308,7 @@ async def async_apply_cleanup_group(
         current_group = store.get(group.group_id)
         if current_group is None or current_group != group:
             raise StudioWriteError(
-                "This managed group changed after review. Refresh and review a new cleanup plan."
+                message("group_changed")
             )
         snapshot = await async_get_snapshot(hass)
         _require_group_is_idle(snapshot, group.group_id)
@@ -356,14 +358,14 @@ async def async_apply_cleanup_group(
                 "success": False,
                 "verified": False,
                 "repair_needed": True,
-                "message": "Native group cleanup stopped before full verification. The recorded group remains available for repair.",
+                "message": message("group_cleanup_unverified"),
             }
 
         await store.async_remove(group.group_id)
         return {
             "success": True,
             "verified": True,
-            "message": "The idle native group, access rules, memberships, and Group Key mapping were cleaned up.",
+            "message": message("group_cleaned"),
             "group_id": group.group_id,
         }
 
@@ -377,7 +379,7 @@ def _require_group_is_idle(snapshot: Mapping[str, Any], group_id: int) -> None:
     ]
     if active:
         raise StudioWriteError(
-            "Remove every Binding that targets this native group before cleaning it up."
+            message("group_in_use")
         )
 
 
@@ -462,16 +464,16 @@ def _acl_subject_labels(
     group_names: Mapping[int, str],
 ) -> list[str]:
     if not isinstance(subjects, list) or not subjects:
-        return ["All subjects"]
+        return [message("all_subjects")]
     labels: list[str] = []
     for subject in subjects:
         subject_id = _optional_int(subject)
         if subject_id is None:
-            labels.append("Unknown subject")
+            labels.append(message("unknown_subject"))
         elif auth_mode == _ACL_AUTH_MODE_GROUP:
-            labels.append(group_names.get(subject_id, "Unknown native group"))
+            labels.append(group_names.get(subject_id, message("unknown_group")))
         else:
-            labels.append(node_names.get(subject_id, "Unknown Matter node"))
+            labels.append(node_names.get(subject_id, message("unknown_node")))
     return labels
 
 
@@ -479,16 +481,16 @@ def _acl_target_labels(
     targets: Any, endpoint_names: Mapping[int, str]
 ) -> list[dict[str, str]]:
     if not isinstance(targets, list) or not targets:
-        return [{"endpoint": "All endpoints", "capability": "All capabilities"}]
+        return [{"endpoint": message("all_endpoints"), "capability": message("all_capabilities")}]
     labels: list[dict[str, str]] = []
     for target in targets:
         endpoint_id = _optional_int(target.get("endpoint")) if isinstance(target, Mapping) else None
         cluster_id = _optional_int(target.get("cluster")) if isinstance(target, Mapping) else None
         labels.append(
             {
-                "endpoint": endpoint_names.get(endpoint_id, "All endpoints")
+                "endpoint": endpoint_names.get(endpoint_id, message("all_endpoints"))
                 if endpoint_id is not None
-                else "All endpoints",
+                else message("all_endpoints"),
                 "capability": _cluster_label(cluster_id),
             }
         )
@@ -497,10 +499,10 @@ def _acl_target_labels(
 
 def _cluster_label(cluster_id: int | None) -> str:
     return {
-        6: "On / Off",
-        8: "Brightness",
-        768: "Color temperature",
-    }.get(cluster_id, "All capabilities" if cluster_id is None else "Other capability")
+        6: message("capability_onoff"),
+        8: message("capability_brightness"),
+        768: message("capability_color_temperature"),
+    }.get(cluster_id, message("all_capabilities" if cluster_id is None else "capability_other"))
 
 
 def _acl_relationship_names(
@@ -591,12 +593,12 @@ async def async_prepare_unicast(
             endpoint_id=target_endpoint_id,
             cluster_id=cluster_id,
         ):
-            raise StudioWriteError("This control relationship already exists.")
+            raise StudioWriteError(message("binding_exists"))
 
     acl_entries = await _read_acl(client, target_node_id)
     if not _has_admin_acl(acl_entries):
         raise StudioWriteError(
-            "The target ACL cannot be safely updated because no administrator entry was found."
+            message("acl_admin_missing")
         )
 
     required_acl_clusters = _required_case_acl_clusters(
@@ -634,14 +636,14 @@ async def async_prepare_unicast(
             acl_capacity, entries_to_add=len(acl_entries_to_add)
         ),
         "steps": [
-            "Read the latest Binding list and target ACL capacity.",
+            message("step_read_binding_acl"),
             *(
-                ["Grant the source device operate access on the target."]
+                [message("step_grant_source")]
                 if acl_needed
                 else []
             ),
-            "Write the source Binding Cluster list.",
-            "Read the Binding Cluster back from the source device.",
+            message("step_write_binding"),
+            message("step_verify_binding"),
         ],
     }
 
@@ -667,7 +669,7 @@ async def async_apply_unicast(hass: HomeAssistant, *, plan_id: str) -> dict[str,
             plan["bindings_before"]
         ):
             raise StudioWriteError(
-                "The source Binding list changed after review. Refresh and review a new plan."
+                message("binding_changed")
             )
 
         acl_added = False
@@ -682,7 +684,7 @@ async def async_apply_unicast(hass: HomeAssistant, *, plan_id: str) -> dict[str,
         if required_acl_clusters:
             if not _has_admin_acl(current_acl):
                 raise StudioWriteError(
-                    "The target ACL changed and is no longer safe to update. Review a new plan."
+                    message("acl_became_unsafe")
                 )
             acl_capacity = await _read_acl_capacity(client, target_node_id, current_acl)
             acl_entries_to_add = _new_case_acl_entries(
@@ -704,7 +706,7 @@ async def async_apply_unicast(hass: HomeAssistant, *, plan_id: str) -> dict[str,
             )
             if not verified_acl:
                 raise StudioWriteError(
-                    "The target ACL write could not be verified; no Binding was written."
+                    message("acl_write_unverified")
                 )
             acl_added = True
 
@@ -736,7 +738,7 @@ async def async_apply_unicast(hass: HomeAssistant, *, plan_id: str) -> dict[str,
         return {
             "success": True,
             "verified": True,
-            "message": "Native unicast binding was written and read back from the source device.",
+            "message": message("unicast_written"),
             "source": source,
             "target": target,
             "clusters": clusters,
@@ -842,12 +844,12 @@ async def async_prepare_groupcast(
             for item in acl_capacity
         ],
         "steps": [
-            "Read the latest Binding, ACL, group capacity, and group key maps.",
-            "Provision one new Group Key on the control source and each target device.",
-            "Add each selected target endpoint to the automatic native group.",
-            "Grant group operate access only to member endpoints that support each selected capability.",
-            "Replace matching direct bindings only after all group provisioning succeeds.",
-            "Read the source Binding Cluster and target group configuration back from the devices.",
+            message("step_read_group_capacity"),
+            message("step_provision_key"),
+            message("step_add_members"),
+            message("step_grant_group"),
+            message("step_replace_direct"),
+            message("step_verify_group"),
         ],
     }
 
@@ -868,7 +870,7 @@ async def async_apply_groupcast(hass: HomeAssistant, *, plan_id: str) -> dict[st
             plan["bindings_before"]
         ):
             raise StudioWriteError(
-                "The source Binding list changed after review. Refresh and review a new plan."
+                message("binding_changed")
             )
 
         participant_node_ids = sorted(
@@ -881,11 +883,11 @@ async def async_apply_groupcast(hass: HomeAssistant, *, plan_id: str) -> dict[st
         )
         if any(group.group_id in state["group_ids"] for state in current_capacity.values()):
             raise StudioWriteError(
-                "The automatic group id was claimed after review. Refresh and review a new plan."
+                message("group_id_claimed")
             )
         if any(group.key_set_id in state["key_set_ids"] for state in current_capacity.values()):
             raise StudioWriteError(
-                "The automatic Group Key slot was claimed after review. Refresh and review a new plan."
+                message("group_key_claimed")
             )
         await _preflight_group_acl_capacity(
             client, members=members, group_id=group.group_id, clusters=clusters
@@ -895,7 +897,7 @@ async def async_apply_groupcast(hass: HomeAssistant, *, plan_id: str) -> dict[st
         await store.async_load()
         if store.get(group.group_id) is not None:
             raise StudioWriteError(
-                "This automatic group is already being maintained. Refresh and review a new plan."
+                message("group_busy")
             )
         # Persist before device writes: a partial key/membership transaction must
         # be repairable later, because epoch key material is not readable back
@@ -958,7 +960,7 @@ async def async_apply_groupcast(hass: HomeAssistant, *, plan_id: str) -> dict[st
                     "success": False,
                     "verified": False,
                     "repair_needed": True,
-                    "message": "The automatic group was provisioned but could not be fully verified. No unverified relationship is shown as ready.",
+                    "message": message("group_provision_unverified"),
                 }
         except Exception as err:  # noqa: BLE001 - retain private repair state
             _LOGGER.warning("Studio groupcast transaction needs repair: %s", err)
@@ -967,14 +969,14 @@ async def async_apply_groupcast(hass: HomeAssistant, *, plan_id: str) -> dict[st
                 "success": False,
                 "verified": False,
                 "repair_needed": True,
-                "message": "The automatic group transaction stopped before Binding verification. Review the recorded group before retrying.",
+                "message": message("group_transaction_stopped"),
             }
 
         await store.async_set_status(group.group_id, "active")
         return {
             "success": True,
             "verified": True,
-            "message": "Native groupcast binding was provisioned and read back from the source device.",
+            "message": message("groupcast_written"),
             "source": source,
             "targets": members,
             "clusters": clusters,
@@ -1002,16 +1004,16 @@ async def async_prepare_remove_binding(
         snapshot.get("devices", []), source_node_id, source_endpoint_id
     )
     if source is None or not source.get("can_bind"):
-        raise StudioWriteError("The Binding source is no longer available. Refresh first.")
+        raise StudioWriteError(message("source_missing"))
 
     if target_kind == "endpoint":
         if target_node_id is None or target_endpoint_id is None:
-            raise StudioWriteError("The direct Binding target is incomplete. Refresh first.")
+            raise StudioWriteError(message("target_incomplete"))
     elif target_kind == "group":
         if target_group_id is None:
-            raise StudioWriteError("The native group target is incomplete. Refresh first.")
+            raise StudioWriteError(message("group_incomplete"))
     else:
-        raise StudioWriteError("The Binding target type is not supported.")
+        raise StudioWriteError(message("target_type_unsupported"))
 
     client = _require_client(hass)
     bindings = await _read_bindings(client, source_node_id, source_endpoint_id)
@@ -1028,7 +1030,7 @@ async def async_prepare_remove_binding(
     ]
     if not removed_entries:
         raise StudioWriteError(
-            "This Binding relationship changed or no longer exists. Refresh and review again."
+            message("relationship_changed")
         )
 
     next_bindings = [entry for entry in bindings if entry not in removed_entries]
@@ -1056,15 +1058,15 @@ async def async_prepare_remove_binding(
         "removed_entry_count": len(removed_entries),
         "keeps_native_group": target_kind == "group",
         "steps": [
-            "Read the latest source Binding Cluster list.",
-            "Remove only the entries that match this displayed relationship.",
+            message("step_read_source"),
+            message("step_remove_relationship"),
             *(
-                ["Keep the native group, Group Key, membership, and ACLs unchanged."]
+                [message("step_keep_group")]
                 if target_kind == "group"
-                else ["Keep target ACLs unchanged."]
+                else [message("step_keep_target_acl")]
             ),
-            "Write the complete remaining Binding Cluster list.",
-            "Read the Binding Cluster back from the source device.",
+            message("step_write_remaining"),
+            message("step_verify_binding"),
         ],
     }
 
@@ -1084,7 +1086,7 @@ async def async_apply_remove_binding(
             plan["bindings_before"]
         ):
             raise StudioWriteError(
-                "The source Binding list changed after review. Refresh and review a new plan."
+                message("binding_changed")
             )
 
         try:
@@ -1102,14 +1104,14 @@ async def async_apply_remove_binding(
                 "success": False,
                 "verified": False,
                 "repair_needed": True,
-                "message": "The Binding removal could not be verified. Refresh before retrying or changing the group.",
+                "message": message("binding_remove_unverified"),
             }
 
         route = "native group" if plan["target_kind"] == "group" else "direct"
         return {
             "success": True,
             "verified": True,
-            "message": f"The {route} Binding was removed and the source Binding Cluster was read back.",
+            "message": message("binding_removed"),
             "source": source,
             "clusters": sorted(
                 {int(entry["cluster_id"]) for entry in plan["removed_entries"]}
@@ -1127,24 +1129,24 @@ async def _validate_request(
     clusters: list[int],
 ) -> tuple[dict[str, Any], dict[str, Any], list[int]]:
     if (source_node_id, source_endpoint_id) == (target_node_id, target_endpoint_id):
-        raise StudioWriteError("A source endpoint cannot bind to itself.")
+        raise StudioWriteError(message("self_binding"))
     snapshot = await async_get_snapshot(hass)
     devices = snapshot.get("devices", [])
     source = _find_endpoint(devices, source_node_id, source_endpoint_id)
     target = _find_endpoint(devices, target_node_id, target_endpoint_id)
     if source is None or not source.get("can_bind"):
-        raise StudioWriteError("Choose a valid Matter control source.")
+        raise StudioWriteError(message("invalid_source"))
     if target is None or not target.get("can_be_target"):
-        raise StudioWriteError("Choose a valid Matter output target.")
+        raise StudioWriteError(message("invalid_target"))
     supported = set(source.get("client_capabilities", [])) & set(
         target.get("server_capabilities", [])
     )
     selected = sorted({int(cluster) for cluster in clusters})
     if not selected:
-        raise StudioWriteError("Choose at least one supported capability.")
+        raise StudioWriteError(message("choose_capability"))
     if not set(selected).issubset(supported):
         raise StudioWriteError(
-            "One or more selected capabilities are not supported by both endpoints."
+            message("capability_mismatch")
         )
     return source, target, selected
 
@@ -1162,30 +1164,30 @@ async def _validate_groupcast_request(
     devices = snapshot.get("devices", [])
     source = _find_endpoint(devices, source_node_id, source_endpoint_id)
     if source is None or not source.get("can_bind"):
-        raise StudioWriteError("Choose a valid Matter control source.")
+        raise StudioWriteError(message("invalid_source"))
     normalized_keys: set[tuple[int, int]] = set()
     members: list[dict[str, Any]] = []
     for target in targets:
         try:
             key = (int(target["node_id"]), int(target["endpoint_id"]))
         except (KeyError, TypeError, ValueError) as err:
-            raise StudioWriteError("Choose valid Matter output targets.") from err
+            raise StudioWriteError(message("invalid_targets")) from err
         if key == (source_node_id, source_endpoint_id):
-            raise StudioWriteError("A source endpoint cannot bind to itself.")
+            raise StudioWriteError(message("self_binding"))
         if key in normalized_keys:
             continue
         endpoint = _find_endpoint(devices, *key)
         if endpoint is None or not endpoint.get("can_be_target"):
-            raise StudioWriteError("Choose valid Matter output targets.")
+            raise StudioWriteError(message("invalid_targets"))
         normalized_keys.add(key)
         members.append(endpoint)
     if len(members) < 2:
-        raise StudioWriteError("Choose at least two output targets for an automatic native group.")
+        raise StudioWriteError(message("group_min_targets"))
 
     source_capabilities = {int(cluster) for cluster in source.get("client_capabilities", [])}
     selected = sorted({int(cluster) for cluster in clusters})
     if not selected:
-        raise StudioWriteError("Choose at least one supported capability.")
+        raise StudioWriteError(message("choose_capability"))
     available = {
         cluster
         for member in members
@@ -1194,7 +1196,7 @@ async def _validate_groupcast_request(
     }
     if not set(selected).issubset(available):
         raise StudioWriteError(
-            "One or more selected capabilities are not supported by the source and any selected target."
+            message("group_capability_mismatch")
         )
     return source, members, selected
 
@@ -1366,13 +1368,13 @@ async def _preflight_group_capacity(
         requires_group_slot = node_id in member_node_id_set
         if max_keys is None or (requires_group_slot and max_groups is None):
             raise StudioWriteError(
-                "A participating device did not report Group and Group Key capacity."
+                message("group_capacity_unknown")
             )
         if len(group_map) >= max_keys or (
             requires_group_slot and len(group_table) >= max_groups
         ):
             raise StudioWriteError(
-                "A participating device does not have one free native Group and Group Key slot."
+                message("group_capacity_full")
             )
         group_ids = {entry["group_id"] for entry in group_map}
         group_ids.update(_group_ids_from_group_table(group_table))
@@ -1392,14 +1394,14 @@ def _allocate_group_id(used: set[int]) -> int:
     for group_id in range(STUDIO_GROUP_ID_START, STUDIO_GROUP_ID_END + 1):
         if group_id not in used:
             return group_id
-    raise StudioWriteError("No automatic native Group ID is available on this fabric.")
+    raise StudioWriteError(message("group_id_exhausted"))
 
 
 def _allocate_key_set_id(used: set[int]) -> int:
     for key_set_id in range(STUDIO_KEY_SET_ID_START, 0x10000):
         if key_set_id not in used:
             return key_set_id
-    raise StudioWriteError("No automatic Group Key set ID is available on this fabric.")
+    raise StudioWriteError(message("group_key_id_exhausted"))
 
 
 async def _read_attribute(client: Any, node_id: int, attribute_path: str) -> Any:
@@ -1459,7 +1461,7 @@ async def _provision_group_key(
     try:
         key_bytes = bytes.fromhex(epoch_key)
     except ValueError as err:  # pragma: no cover - generated locally, defensive only
-        raise StudioWriteError("The generated Group Key was invalid.") from err
+        raise StudioWriteError(message("invalid_group_key")) from err
     result = await _send_device_command(
         client,
         node_id=node_id,
@@ -1467,7 +1469,7 @@ async def _provision_group_key(
         command=_key_set_write_command(key_set_id, key_bytes),
     )
     if _write_result_failed(result):
-        raise StudioWriteError("A participating device rejected the Group Key write.")
+        raise StudioWriteError(message("group_key_rejected"))
 
     path = f"0/{CLUSTER_GROUP_KEY_MANAGEMENT}/{ATTR_GROUP_KEY_MAP}"
     existing = _parse_group_key_map(await _read_attribute(client, node_id, path))
@@ -1487,7 +1489,7 @@ async def _provision_group_key(
         group_id=group_id,
         key_set_id=key_set_id,
     ):
-        raise StudioWriteError("A participating device did not confirm its Group Key mapping.")
+        raise StudioWriteError(message("group_key_unverified"))
 
 
 def _key_set_write_command(key_set_id: int, epoch_key: bytes) -> Any:
@@ -1553,7 +1555,7 @@ async def _remove_group_key_mapping(
         return
     if any(entry["key_set_id"] != key_set_id for entry in matches):
         raise StudioWriteError(
-            "The managed Group Key mapping changed and cannot be safely removed."
+            message("group_key_changed")
         )
     remaining = [entry for entry in existing if entry["group_id"] != group_id]
     fabric_index = await _read_fabric_index(client, node_id)
@@ -1572,7 +1574,7 @@ async def _remove_group_key_mapping(
             if not any(entry["group_id"] == group_id for entry in readback):
                 return
             await asyncio.sleep(_VERIFY_DELAY_SECONDS)
-    raise StudioWriteError("A participant did not confirm its Group Key mapping removal.")
+    raise StudioWriteError(message("group_key_remove_unverified"))
 
 
 async def _remove_group_key_set(
@@ -1595,7 +1597,7 @@ async def _remove_group_key_set(
         ),
     )
     if _write_result_failed(result):
-        raise StudioWriteError("A participant rejected Group Key Set removal.")
+        raise StudioWriteError(message("key_set_remove_rejected"))
 
 
 def _encode_fabric_struct(
@@ -1619,7 +1621,7 @@ async def _send_device_command(
     send_command = getattr(client, "send_device_command", None)
     if not callable(send_command):
         raise StudioWriteError(
-            "This Home Assistant Matter client cannot send native Group commands."
+            message("group_commands_unsupported")
         )
     return await send_command(
         node_id=node_id, endpoint_id=endpoint_id, command=command
@@ -1640,11 +1642,11 @@ async def _add_group_member(
         ),
     )
     if _write_result_failed(result):
-        raise StudioWriteError("A selected target rejected automatic group membership.")
+        raise StudioWriteError(message("membership_rejected"))
     if not await _verify_group_membership(
         client, node_id=node_id, endpoint_id=endpoint_id, group_id=group_id
     ):
-        raise StudioWriteError("A selected target did not confirm automatic group membership.")
+        raise StudioWriteError(message("membership_unverified"))
 
 
 async def _remove_group_member_if_present(
@@ -1664,13 +1666,13 @@ async def _remove_group_member_if_present(
         command=clusters.Groups.Commands.RemoveGroup(groupID=group_id),
     )
     if _write_result_failed(result):
-        raise StudioWriteError("A managed group member rejected group removal.")
+        raise StudioWriteError(message("group_remove_rejected"))
     for _ in range(_VERIFY_ATTEMPTS):
         readback = _struct_entries(await _read_attribute(client, node_id, path))
         if not _group_table_has_member(readback, group_id=group_id, endpoint_id=endpoint_id):
             return
         await asyncio.sleep(_VERIFY_DELAY_SECONDS)
-    raise StudioWriteError("A managed group member did not confirm group removal.")
+    raise StudioWriteError(message("group_remove_unverified"))
 
 
 async def _verify_group_memberships(
@@ -1745,7 +1747,7 @@ async def _ensure_group_acl(
         return
     if not _has_admin_acl(entries):
         raise StudioWriteError(
-            "A selected target ACL cannot be safely updated because no administrator entry was found."
+            message("member_admin_missing")
         )
     capacity = await _read_acl_capacity(client, node_id, entries)
     entries_to_add = _new_group_acl_entries(group_id, endpoint_id, required, capacity)
@@ -1759,7 +1761,7 @@ async def _ensure_group_acl(
         ):
             return
         await asyncio.sleep(_VERIFY_DELAY_SECONDS)
-    raise StudioWriteError("A selected target did not confirm the group access rule.")
+    raise StudioWriteError(message("group_acl_unverified"))
 
 
 async def _remove_group_acl_grants(
@@ -1782,7 +1784,7 @@ async def _remove_group_acl_grants(
     )
     if ambiguous:
         raise StudioWriteError(
-            "A managed group has a wildcard ACL rule that cannot be safely removed."
+            message("wildcard_acl_unsafe")
         )
     if not changed:
         return
@@ -1795,7 +1797,7 @@ async def _remove_group_acl_grants(
         ):
             return
         await asyncio.sleep(_VERIFY_DELAY_SECONDS)
-    raise StudioWriteError("A member did not confirm removal of the group access rule.")
+    raise StudioWriteError(message("group_acl_remove_unverified"))
 
 
 def _without_group_acl_targets(
@@ -1971,7 +1973,7 @@ def _find_endpoint(
 def _require_client(hass: HomeAssistant) -> Any:
     client = _get_matter_client(hass)
     if client is None:
-        raise StudioWriteError("Home Assistant's Matter client is not available.")
+        raise StudioWriteError(message("matter_client_unavailable"))
     return client
 
 
@@ -2003,9 +2005,8 @@ async def _read_acl(client: Any, node_id: int) -> list[dict[str, Any]]:
         entry = _normalise_acl_entry(raw_entry)
         if entry is None:
             raise StudioWriteError(
-                "The target Access Control list has an unsupported entry shape "
-                f"at entry {index}: {_acl_shape_summary(raw_entry)} "
-                f"(table: {_acl_table_shape(value)})."
+                message("acl_shape_unsupported", index=index,
+                        shape=_acl_shape_summary(raw_entry), table=_acl_table_shape(value))
             )
         entries.append(entry)
     return entries
@@ -2061,7 +2062,7 @@ def _require_acl_capacity(capacity: Mapping[str, int | None], entries_to_add: in
         return
     if used + entries_to_add > maximum:
         raise StudioWriteError(
-            f"The target ACL is full ({used}/{maximum}). Reclaim an unused ACL rule before creating this Binding."
+            message("acl_full", used=used, maximum=maximum)
         )
 
 
@@ -2088,9 +2089,9 @@ async def _read_fabric_index(client: Any, node_id: int) -> int:
     try:
         index = int(value)
     except (TypeError, ValueError) as err:
-        raise StudioWriteError("The source fabric index could not be read.") from err
+        raise StudioWriteError(message("fabric_read_failed")) from err
     if index < 1:
-        raise StudioWriteError("The source fabric index is invalid.")
+        raise StudioWriteError(message("fabric_invalid"))
     return index
 
 
@@ -2546,18 +2547,18 @@ async def _write_acl(client: Any, node_id: int, entries: list[dict[str, Any]]) -
     )
     if not _has_admin_acl(ordered):
         raise StudioWriteError(
-            "Refusing to write an ACL without an administrator entry."
+            message("acl_admin_required")
         )
     send_command = getattr(client, "send_raw_command", None)
     if not callable(send_command):
         send_command = getattr(client, "send_command", None)
     if not callable(send_command):
         raise StudioWriteError(
-            "This Home Assistant Matter client cannot safely update ACLs."
+            message("acl_write_unsupported")
         )
     result = await send_command("set_acl_entry", node_id=node_id, entry=ordered)
     if _write_result_failed(result):
-        raise StudioWriteError("The target device rejected the Access Control update.")
+        raise StudioWriteError(message("acl_write_rejected"))
 
 
 def _encode_acl_entry(entry: dict[str, Any]) -> dict[str, Any]:
@@ -2618,14 +2619,11 @@ async def _verify_acl(
 
 
 def _repair_needed_result(acl_added: bool) -> dict[str, Any]:
-    message = "The Binding write was not verified on the source device."
-    if acl_added:
-        message += " Target access was added; review the target ACL before retrying."
     return {
         "success": False,
         "verified": False,
         "repair_needed": acl_added,
-        "message": message,
+        "message": message("binding_write_acl_added" if acl_added else "binding_write_unverified"),
     }
 
 
@@ -2652,8 +2650,8 @@ def _take_plan(
     plan = _pending_plans(hass).pop(plan_id, None)
     if plan is None:
         raise StudioWriteError(
-            "This review expired. Generate a new plan before writing."
+            message("plan_expired")
         )
     if expected_kind is not None and plan.get("kind") != expected_kind:
-        raise StudioWriteError("This review does not match the requested native Matter operation.")
+        raise StudioWriteError(message("plan_kind_mismatch"))
     return plan

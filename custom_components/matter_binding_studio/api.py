@@ -24,6 +24,8 @@ from .const import (
     WS_TYPE_PREPARE_REMOVE_BINDING,
     WS_TYPE_PREPARE_UNICAST,
 )
+from .messages import message, wire_payload, LocalizedMessage
+
 from .matter import async_get_snapshot
 from . import bulk
 from .writer import (
@@ -66,6 +68,19 @@ async def async_setup(hass: HomeAssistant) -> None:
     domain_data["_ws_registered"] = True
 
 
+def _send_result(connection, message_id, result):
+    connection.send_result(message_id, wire_payload(result))
+
+
+def _send_error(connection, message_id, code, value):
+    if isinstance(value, StudioWriteError):
+        value = value.args[0]
+    error = {"code": code, "message": str(value)}
+    if isinstance(value, LocalizedMessage):
+        error["studio_message"] = value.descriptor
+    connection.send_message({"id": message_id, "type": "result", "success": False, "error": error})
+
+
 def _send_matter_operation_error(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
@@ -75,10 +90,10 @@ def _send_matter_operation_error(
 ) -> None:
     """Avoid leaking a raw Matter stack trace into an operator-facing panel."""
     _LOGGER.warning("Studio %s failed: %s", operation, err)
-    connection.send_error(
+    _send_error(connection,
         msg["id"],
         "matter_operation_failed",
-        "The Matter device operation could not be completed. Confirm the device is online, then refresh and retry.",
+        message("operation_failed"),
     )
 
 
@@ -90,7 +105,7 @@ async def ws_get_snapshot(
     msg: dict[str, Any],
 ) -> None:
     """Return a native-Matter read model without changing the fabric."""
-    connection.send_result(msg["id"], await async_get_snapshot(hass))
+    _send_result(connection, msg["id"], await async_get_snapshot(hass))
 
 
 @websocket_api.websocket_command(
@@ -108,8 +123,8 @@ async def ws_get_acl_overview(
 ) -> None:
     """Read one selected target's ACL without changing the Matter fabric."""
     if not _is_admin(connection):
-        connection.send_error(
-            msg["id"], "forbidden", "Matter Binding Studio is admin-only."
+        _send_error(connection,
+            msg["id"], "forbidden", message("admin_only")
         )
         return
     try:
@@ -119,12 +134,12 @@ async def ws_get_acl_overview(
             target_endpoint_id=msg["target_endpoint_id"],
         )
     except StudioWriteError as err:
-        connection.send_error(msg["id"], "acl_read_failed", str(err))
+        _send_error(connection, msg["id"], "acl_read_failed", err)
         return
     except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
         _send_matter_operation_error(connection, msg, operation="ACL read", err=err)
         return
-    connection.send_result(msg["id"], overview)
+    _send_result(connection, msg["id"], overview)
 
 
 @websocket_api.websocket_command(
@@ -144,7 +159,7 @@ async def ws_prepare_remove_acl(
 ) -> None:
     """Create a reviewed plan for reclaiming selected unused ACL entries."""
     if not _is_admin(connection):
-        connection.send_error(msg["id"], "forbidden", "Matter Binding Studio is admin-only.")
+        _send_error(connection, msg["id"], "forbidden", message("admin_only"))
         return
     try:
         plan = await async_prepare_remove_acl(
@@ -155,12 +170,12 @@ async def ws_prepare_remove_acl(
             entry_indexes=msg.get("entry_indexes"),
         )
     except StudioWriteError as err:
-        connection.send_error(msg["id"], "plan_failed", str(err))
+        _send_error(connection, msg["id"], "plan_failed", err)
         return
     except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
         _send_matter_operation_error(connection, msg, operation="ACL reclaim planning", err=err)
         return
-    connection.send_result(msg["id"], plan)
+    _send_result(connection, msg["id"], plan)
 
 
 @websocket_api.websocket_command(
@@ -178,17 +193,17 @@ async def ws_apply_remove_acl(
 ) -> None:
     """Apply one reviewed ACL reclaim plan and verify the full table."""
     if not _is_admin(connection):
-        connection.send_error(msg["id"], "forbidden", "Matter Binding Studio is admin-only.")
+        _send_error(connection, msg["id"], "forbidden", message("admin_only"))
         return
     try:
         result = await async_apply_remove_acl(hass, plan_id=msg["plan_id"])
     except StudioWriteError as err:
-        connection.send_error(msg["id"], "write_failed", str(err))
+        _send_error(connection, msg["id"], "write_failed", err)
         return
     except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
         _send_matter_operation_error(connection, msg, operation="ACL reclaim", err=err)
         return
-    connection.send_result(msg["id"], result)
+    _send_result(connection, msg["id"], result)
 
 
 @websocket_api.websocket_command(
@@ -205,17 +220,17 @@ async def ws_prepare_cleanup_group(
 ) -> None:
     """Review cleanup for one idle Studio-owned native group."""
     if not _is_admin(connection):
-        connection.send_error(msg["id"], "forbidden", "Matter Binding Studio is admin-only.")
+        _send_error(connection, msg["id"], "forbidden", message("admin_only"))
         return
     try:
         plan = await async_prepare_cleanup_group(hass, group_id=msg["group_id"])
     except StudioWriteError as err:
-        connection.send_error(msg["id"], "plan_failed", str(err))
+        _send_error(connection, msg["id"], "plan_failed", err)
         return
     except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
         _send_matter_operation_error(connection, msg, operation="group cleanup planning", err=err)
         return
-    connection.send_result(msg["id"], plan)
+    _send_result(connection, msg["id"], plan)
 
 
 @websocket_api.websocket_command(
@@ -233,17 +248,17 @@ async def ws_apply_cleanup_group(
 ) -> None:
     """Apply a reviewed idle native-group cleanup transaction."""
     if not _is_admin(connection):
-        connection.send_error(msg["id"], "forbidden", "Matter Binding Studio is admin-only.")
+        _send_error(connection, msg["id"], "forbidden", message("admin_only"))
         return
     try:
         result = await async_apply_cleanup_group(hass, plan_id=msg["plan_id"])
     except StudioWriteError as err:
-        connection.send_error(msg["id"], "write_failed", str(err))
+        _send_error(connection, msg["id"], "write_failed", err)
         return
     except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
         _send_matter_operation_error(connection, msg, operation="group cleanup", err=err)
         return
-    connection.send_result(msg["id"], result)
+    _send_result(connection, msg["id"], result)
 
 
 @websocket_api.websocket_command(
@@ -264,8 +279,8 @@ async def ws_prepare_unicast(
 ) -> None:
     """Build an admin-reviewed native unicast write plan."""
     if not _is_admin(connection):
-        connection.send_error(
-            msg["id"], "forbidden", "Matter Binding Studio is admin-only."
+        _send_error(connection,
+            msg["id"], "forbidden", message("admin_only")
         )
         return
     try:
@@ -278,12 +293,12 @@ async def ws_prepare_unicast(
             clusters=msg["clusters"],
         )
     except StudioWriteError as err:
-        connection.send_error(msg["id"], "plan_failed", str(err))
+        _send_error(connection, msg["id"], "plan_failed", err)
         return
     except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
         _send_matter_operation_error(connection, msg, operation="Binding planning", err=err)
         return
-    connection.send_result(msg["id"], plan)
+    _send_result(connection, msg["id"], plan)
 
 
 @websocket_api.websocket_command(
@@ -301,19 +316,19 @@ async def ws_apply_unicast(
 ) -> None:
     """Execute one reviewed admin-confirmed native unicast plan."""
     if not _is_admin(connection):
-        connection.send_error(
-            msg["id"], "forbidden", "Matter Binding Studio is admin-only."
+        _send_error(connection,
+            msg["id"], "forbidden", message("admin_only")
         )
         return
     try:
         result = await async_apply_unicast(hass, plan_id=msg["plan_id"])
     except StudioWriteError as err:
-        connection.send_error(msg["id"], "write_failed", str(err))
+        _send_error(connection, msg["id"], "write_failed", err)
         return
     except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
         _send_matter_operation_error(connection, msg, operation="Binding write", err=err)
         return
-    connection.send_result(msg["id"], result)
+    _send_result(connection, msg["id"], result)
 
 
 @websocket_api.websocket_command(
@@ -341,8 +356,8 @@ async def ws_prepare_groupcast(
 ) -> None:
     """Build an admin-reviewed automatic native groupcast plan."""
     if not _is_admin(connection):
-        connection.send_error(
-            msg["id"], "forbidden", "Matter Binding Studio is admin-only."
+        _send_error(connection,
+            msg["id"], "forbidden", message("admin_only")
         )
         return
     try:
@@ -354,12 +369,12 @@ async def ws_prepare_groupcast(
             clusters=msg["clusters"],
         )
     except StudioWriteError as err:
-        connection.send_error(msg["id"], "plan_failed", str(err))
+        _send_error(connection, msg["id"], "plan_failed", err)
         return
     except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
         _send_matter_operation_error(connection, msg, operation="group Binding planning", err=err)
         return
-    connection.send_result(msg["id"], plan)
+    _send_result(connection, msg["id"], plan)
 
 
 @websocket_api.websocket_command(
@@ -377,19 +392,19 @@ async def ws_apply_groupcast(
 ) -> None:
     """Apply one reviewed automatic native groupcast plan."""
     if not _is_admin(connection):
-        connection.send_error(
-            msg["id"], "forbidden", "Matter Binding Studio is admin-only."
+        _send_error(connection,
+            msg["id"], "forbidden", message("admin_only")
         )
         return
     try:
         result = await async_apply_groupcast(hass, plan_id=msg["plan_id"])
     except StudioWriteError as err:
-        connection.send_error(msg["id"], "write_failed", str(err))
+        _send_error(connection, msg["id"], "write_failed", err)
         return
     except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
         _send_matter_operation_error(connection, msg, operation="group Binding write", err=err)
         return
-    connection.send_result(msg["id"], result)
+    _send_result(connection, msg["id"], result)
 
 
 @websocket_api.websocket_command(
@@ -411,8 +426,8 @@ async def ws_prepare_remove_binding(
 ) -> None:
     """Build an admin-reviewed plan that removes one native relationship."""
     if not _is_admin(connection):
-        connection.send_error(
-            msg["id"], "forbidden", "Matter Binding Studio is admin-only."
+        _send_error(connection,
+            msg["id"], "forbidden", message("admin_only")
         )
         return
     try:
@@ -426,12 +441,12 @@ async def ws_prepare_remove_binding(
             target_group_id=msg.get("target_group_id"),
         )
     except StudioWriteError as err:
-        connection.send_error(msg["id"], "plan_failed", str(err))
+        _send_error(connection, msg["id"], "plan_failed", err)
         return
     except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
         _send_matter_operation_error(connection, msg, operation="Binding removal planning", err=err)
         return
-    connection.send_result(msg["id"], plan)
+    _send_result(connection, msg["id"], plan)
 
 
 @websocket_api.websocket_command(
@@ -449,19 +464,19 @@ async def ws_apply_remove_binding(
 ) -> None:
     """Apply a reviewed deletion and return its Binding-table readback result."""
     if not _is_admin(connection):
-        connection.send_error(
-            msg["id"], "forbidden", "Matter Binding Studio is admin-only."
+        _send_error(connection,
+            msg["id"], "forbidden", message("admin_only")
         )
         return
     try:
         result = await async_apply_remove_binding(hass, plan_id=msg["plan_id"])
     except StudioWriteError as err:
-        connection.send_error(msg["id"], "write_failed", str(err))
+        _send_error(connection, msg["id"], "write_failed", err)
         return
     except Exception as err:  # noqa: BLE001 - preserve a safe operator-facing error
         _send_matter_operation_error(connection, msg, operation="Binding removal", err=err)
         return
-    connection.send_result(msg["id"], result)
+    _send_result(connection, msg["id"], result)
 
 
 @websocket_api.websocket_command({
@@ -471,17 +486,17 @@ async def ws_apply_remove_binding(
 @websocket_api.async_response
 async def ws_prepare_bulk_remove(hass, connection, msg):
     if not _is_admin(connection):
-        connection.send_error(msg["id"], "forbidden", "Matter Binding Studio is admin-only.")
+        _send_error(connection, msg["id"], "forbidden", message("admin_only"))
         return
     try:
         result = await bulk.prepare(hass, msg["relationship_ids"])
     except StudioWriteError as err:
-        connection.send_error(msg["id"], "plan_failed", str(err))
+        _send_error(connection, msg["id"], "plan_failed", err)
         return
     except Exception as err:
         _send_matter_operation_error(connection, msg, operation="bulk removal planning", err=err)
         return
-    connection.send_result(msg["id"], result)
+    _send_result(connection, msg["id"], result)
 
 
 @websocket_api.websocket_command({
@@ -492,17 +507,17 @@ async def ws_prepare_bulk_remove(hass, connection, msg):
 @websocket_api.async_response
 async def ws_apply_bulk_remove(hass, connection, msg):
     if not _is_admin(connection):
-        connection.send_error(msg["id"], "forbidden", "Matter Binding Studio is admin-only.")
+        _send_error(connection, msg["id"], "forbidden", message("admin_only"))
         return
     try:
         result = await bulk.apply(hass, msg["plan_id"])
     except StudioWriteError as err:
-        connection.send_error(msg["id"], "write_failed", str(err))
+        _send_error(connection, msg["id"], "write_failed", err)
         return
     except Exception as err:
         _send_matter_operation_error(connection, msg, operation="bulk removal", err=err)
         return
-    connection.send_result(msg["id"], result)
+    _send_result(connection, msg["id"], result)
 
 
 def _is_admin(connection: websocket_api.ActiveConnection) -> bool:

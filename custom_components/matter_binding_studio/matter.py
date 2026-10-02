@@ -19,6 +19,8 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .group_store import get_managed_group_store
+from .messages import message
+
 from .const import (
     ATTR_BINDING,
     ATTR_CLIENT_LIST,
@@ -57,13 +59,13 @@ async def async_get_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     """
     client = _get_matter_client(hass)
     if client is None:
-        return _empty_snapshot("Matter integration is not currently available.")
+        return _empty_snapshot(message("matter_unavailable"))
 
     try:
         raw_nodes = list(client.get_nodes())
     except Exception as err:  # noqa: BLE001 - return a safe empty model to the panel
         _LOGGER.warning("Studio could not obtain Matter nodes: %s", err)
-        return _empty_snapshot("Matter node inventory is temporarily unavailable.")
+        return _empty_snapshot(message("inventory_unavailable"))
 
     names = _build_name_index(hass)
     endpoints: dict[tuple[int, int], dict[str, Any]] = {}
@@ -118,7 +120,7 @@ async def async_get_snapshot(hass: HomeAssistant) -> dict[str, Any]:
         )
         bindings_by_source[source_key] = bindings
         if warning:
-            warnings.append(f"Could not read bindings for {endpoint['name']}.")
+            warnings.append(message("bindings_read_failed", name=endpoint['name']))
 
     relationships = _relationships_from_bindings(bindings_by_source, endpoints, groups)
     for relationship in relationships:
