@@ -65,6 +65,28 @@ Group ID, removes its recorded ACL targets, members, Group Key mappings, and
 Key Sets, then drops local metadata only after the device operations verify.
 If an operation is uncertain, the group remains recorded as needing repair.
 
+## UI update (not yet released)
+
+The main view is a compact Binding list with source/target search and area
+filtering. **Select filtered results** selects only visible relationships;
+changing filters clears the selection. Add Binding opens a side drawer.
+Native groups and advanced ACL/capacity tools are collapsed by default.
+
+Selected relationships can be deleted together after one reviewed confirmation.
+The backend resolves the selection against a fresh snapshot and prepares one
+remaining Binding table per source endpoint. Apply uses the existing source
+lock, rejects tables changed since review, writes once per source, and verifies
+readback. Results distinguish verified deletion, changed tables, failed reads,
+and uncertain writes. This is **not an atomic transaction across devices**;
+successful sources remain applied if another source fails. Binding deletion
+never removes target ACLs, Group Keys, or group membership.
+
+The new administrator-only WebSocket commands are
+`matter_binding_studio/prepare_bulk_remove_bindings` (`relationship_ids`, 1–200)
+and `matter_binding_studio/apply_bulk_remove_bindings` (`plan_id`, `confirm: true`).
+Plans are single-use and expire under the existing writer TTL. The standalone
+preview simulates these commands; device I/O still requires live HA validation.
+
 ## HACS installation
 
 1. In HACS, add this repository as a **Custom repository** of type

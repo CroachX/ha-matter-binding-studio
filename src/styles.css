@@ -237,7 +237,50 @@
 .mbs-acl-unused { color: var(--warning-color, #967200); background: color-mix(in srgb, var(--warning-color, #967200) 12%, transparent); }
 .mbs-acl-unknown { color: var(--error-color, #ba1a1a); background: color-mix(in srgb, var(--error-color, #ba1a1a) 10%, transparent); }
 
+.mbs-header { padding: 14px 18px; align-items: center; }
+.mbs-header h1 { margin: 0; font-size: 21px; }
+.mbs-header-actions { display: flex; gap: 8px; }
+.mbs-help { margin: 12px 0; color: var(--secondary-text-color, #6b6570); font-size: 13px; }
+.mbs-help p { padding: 10px; }
+.mbs-root summary { cursor: pointer; }
+.mbs-fold { border: 1px solid var(--divider-color, #dfdae2); border-radius: 10px; background: var(--card-background-color, #fff); }
+.mbs-fold > summary { padding: 16px; font-weight: 600; }
+.mbs-fold > section { box-shadow: none; }
+.mbs-list-toolbar { display: flex; gap: 10px; margin: 14px 0; }
+.mbs-list-toolbar input, .mbs-list-toolbar select { font: inherit; font-size: 14px; min-height: 38px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--divider-color, #dfdae2); color: inherit; background: var(--card-background-color, #fff); min-width: 0; }
+.mbs-list-toolbar input { flex: 1; }
+.mbs-selection-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; min-height: 44px; font-size: 13px; padding-bottom: 10px; }
+.mbs-selection-bar label { display: inline-flex; align-items: center; gap: 8px; }
+.mbs-selection-bar button, .mbs-row-details button, .mbs-drawer-close { font: inherit; cursor: pointer; border: 1px solid var(--divider-color, #dfdae2); border-radius: 8px; padding: 8px 12px; background: var(--card-background-color, #fff); color: inherit; }
+.mbs-selection-bar .mbs-danger-button { color: var(--text-primary-color, #fff); }
+.mbs-root input[type=checkbox] { width: 17px; height: 17px; flex-shrink: 0; accent-color: var(--primary-color, #006a6a); }
+.mbs-binding-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto auto; align-items: start; gap: 12px; padding: 14px 0; border-top: 1px solid var(--divider-color, #dfdae2); font-size: 14px; }
+.mbs-binding-path { display: grid; grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr); gap: 8px; overflow-wrap: anywhere; line-height: 1.5; }
+.mbs-binding-path > span { color: var(--primary-color, #006a6a); }
+.mbs-inline-capabilities { color: var(--secondary-text-color, #6b6570); font-size: 12px; line-height: 1.8; }
+.mbs-row-details { font-size: 12px; max-width: 260px; }
+.mbs-row-details p { margin: 8px 0; overflow-wrap: anywhere; }
+.mbs-dialog { color: var(--primary-text-color, #1d1b20); background: var(--card-background-color, #fff); border: 1px solid var(--divider-color, #dfdae2); border-radius: 14px; width: min(680px, calc(100vw - 32px)); max-height: 90dvh; padding: 24px; box-shadow: 0 12px 50px #0003; }
+.mbs-dialog::backdrop { background: #0006; }
+.mbs-dialog h2 { font-size: 20px; }
+.mbs-dialog p { margin: 14px 0; font-size: 14px; line-height: 1.6; }
+.mbs-dialog ul { max-height: 40dvh; overflow: auto; padding-left: 22px; line-height: 1.7; overflow-wrap: anywhere; }
+.mbs-dialog .mbs-review-actions { justify-content: flex-end; margin-top: 20px; }
+.mbs-drawer { margin: 0 0 0 auto; height: 100dvh; max-height: 100dvh; width: min(720px, 100vw); border-radius: 14px 0 0 14px; }
+.mbs-drawer .mbs-composer { border: 0; box-shadow: none; padding: 0; }
+.mbs-drawer-close { display: block; margin-left: auto; }
+.mbs-root button:disabled { cursor: not-allowed; opacity: .55; }
+.mbs-root :focus-visible { outline: 2px solid var(--primary-color, #006a6a); outline-offset: 3px; }
+
 @media (max-width: 600px) {
+  .mbs-header-actions { flex-wrap: wrap; }
+  .mbs-list-toolbar { flex-direction: column; }
+  .mbs-binding-row { grid-template-columns: 20px minmax(0, 1fr) auto; }
+  .mbs-binding-path { grid-template-columns: 1fr; }
+  .mbs-binding-path > span { display: none; }
+  .mbs-binding-path > strong:last-child::before { content: '→ '; }
+  .mbs-inline-capabilities { grid-column: 2; grid-row: 2; }
+  .mbs-row-details { grid-column: 3; grid-row: 1 / span 2; max-width: 110px; }
   .mbs-panel { padding: 14px; }
   .mbs-header { align-items: stretch; flex-direction: column; }
   .mbs-header button { width: 100%; }

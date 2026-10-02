@@ -124,11 +124,41 @@ previewSnapshot.native_control_sets[0]!.members = [
   previewSnapshot.devices[2],
 ];
 
+// Exercise multi-target deletion on the same source and filtering across rooms.
+previewSnapshot.relationships.push(
+  { ...structuredClone(previewSnapshot.relationships[0]), id: "1001-2-endpoint-1003-1",
+    targets: { kind: "endpoint", name: "Light strip", members: [previewSnapshot.devices[2]] }, clusters: [6, 8] },
+  { ...structuredClone(previewSnapshot.relationships[0]), id: "1001-2-endpoint-1004-1",
+    targets: { kind: "endpoint", name: "Main Bedroom light", members: [previewSnapshot.devices[3]] }, clusters: [6] },
+);
+let previewRemoval: string[] = [];
+
 const previewHass: HomeAssistant = {
   locale: { language: "zh-Hant" },
   async callWS<T>(message: { type: string; [key: string]: unknown }): Promise<T> {
     if (message.type === "matter_binding_studio/get_snapshot") {
-      return previewSnapshot as T;
+      return structuredClone(previewSnapshot) as T;
+    }
+    if (message.type === "matter_binding_studio/prepare_bulk_remove_bindings") {
+      const ids = message.relationship_ids as string[];
+      const rows = previewSnapshot.relationships.filter(row => ids.includes(row.id));
+      previewRemoval = rows.map(row => row.id);
+      return { plan_id: "preview-bulk", relationships: rows,
+        source_count: new Set(rows.map(row => `${row.source.node_id}:${row.source.endpoint_id}`)).size,
+        removed_entry_count: rows.reduce((n, row) => n + row.clusters.length, 0),
+      } as T;
+    }
+    if (message.type === "matter_binding_studio/apply_bulk_remove_bindings") {
+      const rows = previewSnapshot.relationships.filter(row => previewRemoval.includes(row.id));
+      const grouped = new Map<string, typeof rows>();
+      for (const row of rows) {
+        const key = `${row.source.node_id}:${row.source.endpoint_id}`;
+        grouped.set(key, [...(grouped.get(key) ?? []), row]);
+      }
+      previewSnapshot.relationships = previewSnapshot.relationships.filter(row => !previewRemoval.includes(row.id));
+      return { success: true, results: [...grouped.values()].map(group => ({
+        source: group[0].source, relationship_ids: group.map(row => row.id), status: "verified",
+      })) } as T;
     }
     if (message.type === "matter_binding_studio/get_acl_overview") {
       const target = previewSnapshot.devices.find((device) =>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import BindingList from "./BindingList";
 import { copy, type Copy, type Language } from "./copy";
 
 export interface HomeAssistant {
@@ -7,7 +8,7 @@ export interface HomeAssistant {
   locale?: { language?: string };
 }
 
-type Endpoint = {
+export type Endpoint = {
   node_id: number | null;
   endpoint_id: number | null;
   node_name: string;
@@ -20,7 +21,7 @@ type Endpoint = {
   can_be_target: boolean;
 };
 
-type Relationship = {
+export type Relationship = {
   id: string;
   source: Endpoint;
   targets: {
@@ -103,16 +104,6 @@ type ApplyResult = {
   message: string;
 };
 
-type RemovalPlan = {
-  plan_id: string;
-  expires_in_seconds: number;
-  route: "direct" | "native_group";
-  source: Endpoint;
-  clusters: number[];
-  removed_entry_count: number;
-  keeps_native_group: boolean;
-  steps: string[];
-};
 
 type AclCapacity = {
   used: number | null;
@@ -175,6 +166,8 @@ export default function App({ hass }: { hass?: HomeAssistant }) {
   const [snapshot, setSnapshot] = useState<StudioSnapshot | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [readFailed, setReadFailed] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [composerBusy, setComposerBusy] = useState(false);
 
   // Home Assistant replaces `hass` whenever any state changes. Keep only the
   // latest client reference, rather than treating every replacement as a
@@ -212,21 +205,19 @@ export default function App({ hass }: { hass?: HomeAssistant }) {
       <main className="mbs-panel">
         <header className="mbs-header">
           <div>
-            <span className="mbs-eyebrow">{t.directBinding}</span>
             <h1>{t.appName}</h1>
-            <p>{t.subtitle}</p>
           </div>
-          <button
+          <div className="mbs-header-actions"><button disabled={!snapshot || !hass} onClick={() => setAdding(true)}>{t.addRelationship}</button><button
             type="button"
             onClick={() => void refresh()}
             disabled={!hass || refreshing}
             aria-busy={refreshing}
           >
             {refreshing && snapshot ? t.refreshing : t.refresh}
-          </button>
+          </button></div>
         </header>
 
-        <p className="mbs-scope">{t.scope}</p>
+        <details className="mbs-help"><summary>{t.help}</summary><p>{t.scope}</p></details>
 
         {!hass ? <p className="mbs-notice">{t.notConnected}</p> : null}
         {readFailed ? <p className="mbs-warning">{t.readFailed}</p> : null}
@@ -239,12 +230,13 @@ export default function App({ hass }: { hass?: HomeAssistant }) {
         {initialLoading ? <p className="mbs-loading">{t.loading}</p> : null}
         {snapshot ? (
           <>
-            <BindingComposer
+            {adding ? <ComposerDrawer busy={composerBusy} close={() => setAdding(false)} t={t}><BindingComposer
               hass={hass}
               snapshot={snapshot}
               refresh={refresh}
               t={t}
-            />
+              onBusy={setComposerBusy}
+            /></ComposerDrawer> : null}
             <StudioData hass={hass} snapshot={snapshot} refresh={refresh} t={t} />
           </>
         ) : null}
@@ -253,16 +245,26 @@ export default function App({ hass }: { hass?: HomeAssistant }) {
   );
 }
 
+function ComposerDrawer({ children, close, t, busy }: { children: React.ReactNode; close: () => void; t: Copy; busy: boolean }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => { ref.current?.showModal(); }, []);
+  return <dialog ref={ref} className="mbs-dialog mbs-drawer" aria-label={t.addRelationship} onCancel={e => { if (busy) e.preventDefault(); else close(); }}>
+    <button className="mbs-drawer-close" disabled={busy} onClick={close}>{t.close}</button>{children}
+  </dialog>;
+}
+
 function BindingComposer({
   hass,
   snapshot,
   refresh,
   t,
+  onBusy,
 }: {
   hass?: HomeAssistant;
   snapshot: StudioSnapshot;
   refresh: () => Promise<void>;
   t: Copy;
+  onBusy: (busy: boolean) => void;
 }) {
   const [sourceKey, setSourceKey] = useState("");
   const [targetKeys, setTargetKeys] = useState<string[]>([]);
@@ -272,6 +274,7 @@ function BindingComposer({
   const [clusters, setClusters] = useState<number[]>([]);
   const [plan, setPlan] = useState<BindingPlan | null>(null);
   const [working, setWorking] = useState(false);
+  useEffect(() => { onBusy(working); }, [working, onBusy]);
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageIsError, setMessageIsError] = useState(false);
@@ -529,7 +532,7 @@ function compareEndpoints(left: Endpoint, right: Endpoint): number {
   );
 }
 
-function endpointLabel(endpoint: Endpoint): string {
+export function endpointLabel(endpoint: Endpoint): string {
   const area = endpoint.area_name?.trim() || "";
   // `name` is the user-facing HA entity name. Keep it intact: an area prefix
   // can be meaningful when one controller exposes endpoints for multiple rooms.
@@ -615,7 +618,7 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function errorMessage(error: unknown): string {
+export function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "object" && error !== null) {
     const candidate = error as {
@@ -643,88 +646,11 @@ function StudioData({
   refresh: () => Promise<void>;
   t: Copy;
 }) {
-  const [removalPlan, setRemovalPlan] = useState<RemovalPlan | null>(null);
-  const [removalRelationship, setRemovalRelationship] = useState<Relationship | null>(null);
-  const [removalConfirmed, setRemovalConfirmed] = useState(false);
-  const [removalWorking, setRemovalWorking] = useState(false);
-  const [removalMessage, setRemovalMessage] = useState<string | null>(null);
-  const [removalMessageIsError, setRemovalMessageIsError] = useState(false);
   const [groupCleanupPlan, setGroupCleanupPlan] = useState<GroupCleanupPlan | null>(null);
   const [groupCleanupConfirmed, setGroupCleanupConfirmed] = useState(false);
   const [groupCleanupWorking, setGroupCleanupWorking] = useState(false);
   const [groupCleanupMessage, setGroupCleanupMessage] = useState<string | null>(null);
   const [groupCleanupMessageIsError, setGroupCleanupMessageIsError] = useState(false);
-
-  const reviewRemoval = async (relationship: Relationship) => {
-    if (!hass || relationship.source.node_id === null || relationship.source.endpoint_id === null) {
-      setRemovalMessage(t.removalUnavailable);
-      setRemovalMessageIsError(true);
-      return;
-    }
-    const message: { type: string; [key: string]: unknown } = {
-      type: "matter_binding_studio/prepare_remove_binding",
-      source_node_id: relationship.source.node_id,
-      source_endpoint_id: relationship.source.endpoint_id,
-      target_kind: relationship.targets.kind,
-    };
-    if (relationship.targets.kind === "group") {
-      if (relationship.targets.group_id === undefined) {
-        setRemovalMessage(t.removalUnavailable);
-        setRemovalMessageIsError(true);
-        return;
-      }
-      message.target_group_id = relationship.targets.group_id;
-    } else {
-      const target = relationship.targets.members[0];
-      if (!target || target.node_id === null || target.endpoint_id === null) {
-        setRemovalMessage(t.removalUnavailable);
-        setRemovalMessageIsError(true);
-        return;
-      }
-      message.target_node_id = target.node_id;
-      message.target_endpoint_id = target.endpoint_id;
-    }
-
-    setRemovalWorking(true);
-    setRemovalMessage(null);
-    try {
-      setRemovalPlan(await hass.callWS<RemovalPlan>(message));
-      setRemovalRelationship(relationship);
-      setRemovalConfirmed(false);
-    } catch (error) {
-      setRemovalMessage(errorMessage(error));
-      setRemovalMessageIsError(true);
-    } finally {
-      setRemovalWorking(false);
-    }
-  };
-
-  const applyRemoval = async () => {
-    if (!hass || !removalPlan || !removalConfirmed) return;
-    setRemovalWorking(true);
-    setRemovalMessage(null);
-    try {
-      const result = await hass.callWS<ApplyResult>({
-        type: "matter_binding_studio/apply_remove_binding",
-        plan_id: removalPlan.plan_id,
-        confirm: true,
-      });
-      setRemovalMessage(result.message);
-      setRemovalMessageIsError(!result.success || !result.verified);
-      if (result.success && result.verified) {
-        await refresh();
-      }
-    } catch (error) {
-      setRemovalMessage(errorMessage(error));
-      setRemovalMessageIsError(true);
-    } finally {
-      // Removal plans are single-use just like creation plans.
-      setRemovalPlan(null);
-      setRemovalRelationship(null);
-      setRemovalConfirmed(false);
-      setRemovalWorking(false);
-    }
-  };
 
   const reviewGroupCleanup = async (controlSet: ControlSet) => {
     if (!hass || !controlSet.managed_by_studio || controlSet.active_relationships > 0) {
@@ -777,78 +703,11 @@ function StudioData({
 
   return (
     <div className="mbs-content">
-      <section>
-        <SectionTitle title={t.controlRelationships} count={snapshot.relationships.length} />
-        <p className="mbs-description">{t.relationshipDescription}</p>
-        {snapshot.relationships.length ? (
-          <div className="mbs-list">
-            {snapshot.relationships.map((relationship) => (
-              <RelationshipRow
-                key={relationship.id}
-                relationship={relationship}
-                t={t}
-                onReviewRemoval={reviewRemoval}
-                removalWorking={removalWorking}
-              />
-            ))}
-          </div>
-        ) : (
-          <Empty text={t.noRelationships} />
-        )}
-        {removalPlan && removalRelationship ? (
-          <div className="mbs-review mbs-removal-review">
-            <strong>{t.removalReviewTitle}</strong>
-            <p>
-              {endpointLabel(removalRelationship.source)} → {relationshipTargetLabel(removalRelationship)}
-            </p>
-            <CapabilityList clusters={removalPlan.clusters} t={t} />
-            <p className="mbs-meta">
-              {removalPlan.removed_entry_count} {t.bindingEntries}
-            </p>
-            {removalPlan.keeps_native_group ? <p className="mbs-warning">{t.removalKeepsGroup}</p> : null}
-            <ul>
-              {removalPlan.steps.map((step) => <li key={step}>{step}</li>)}
-            </ul>
-            <label className="mbs-confirm">
-              <input
-                type="checkbox"
-                checked={removalConfirmed}
-                onChange={(event) => setRemovalConfirmed(event.target.checked)}
-              />
-              {t.confirmRemoval}
-            </label>
-            <div className="mbs-review-actions">
-              <button
-                type="button"
-                onClick={() => {
-                  setRemovalPlan(null);
-                  setRemovalRelationship(null);
-                  setRemovalConfirmed(false);
-                }}
-                disabled={removalWorking}
-              >
-                {t.cancel}
-              </button>
-              <button
-                type="button"
-                className="mbs-danger-button"
-                onClick={() => void applyRemoval()}
-                disabled={!removalConfirmed || removalWorking}
-              >
-                {removalWorking ? t.working : t.removeBinding}
-              </button>
-            </div>
-          </div>
-        ) : null}
-        {removalMessage ? (
-          <p className={removalMessageIsError ? "mbs-warning" : "mbs-success"}>
-            {removalMessage}
-          </p>
-        ) : null}
-      </section>
+      <BindingList hass={hass} relationships={snapshot.relationships} refresh={refresh} t={t} />
 
-      <AclInspector hass={hass} snapshot={snapshot} t={t} />
-
+      <details className="mbs-fold"><summary>{t.controlSets} ({snapshot.native_control_sets.length})
+        {snapshot.native_control_sets.some(group => group.status === "pending" || group.status === "repair_needed") ? <span className="mbs-attention"> · {t.groupsNeedAttention}</span> : null}
+      </summary>
       <section>
         <SectionTitle title={t.controlSets} count={snapshot.native_control_sets.length} />
         <p className="mbs-description">{t.controlSetsDescription}</p>
@@ -911,6 +770,9 @@ function StudioData({
         ) : null}
       </section>
 
+      </details>
+      <details className="mbs-fold"><summary>{t.advanced}</summary>
+      <AclInspector hass={hass} snapshot={snapshot} t={t} />
       <section>
         <SectionTitle title={t.capacity} count={snapshot.capacities.length} />
         <p className="mbs-description">{t.capacityDescription}</p>
@@ -939,7 +801,7 @@ function StudioData({
             </article>
           ))}
         </div>
-      </section>
+      </section></details>
     </div>
   );
 }
@@ -1258,54 +1120,6 @@ function AclCapacitySummary({ capacity, t }: { capacity: AclCapacity; t: Copy })
   );
 }
 
-function RelationshipRow({
-  relationship,
-  t,
-  onReviewRemoval,
-  removalWorking,
-}: {
-  relationship: Relationship;
-  t: Copy;
-  onReviewRemoval: (relationship: Relationship) => void;
-  removalWorking: boolean;
-}) {
-  const members = relationship.targets.members;
-  const targetName = relationshipTargetLabel(relationship);
-  return (
-    <article className="mbs-card">
-      <div className="mbs-card-topline">
-        <div className="mbs-route">
-          <EndpointName endpoint={relationship.source} />
-          <span aria-hidden="true">→</span>
-          <div>
-            <strong>{targetName}</strong>
-            {relationship.route === "native_group" ? (
-              <p className="mbs-meta">
-                {members.length} {t.members}
-              </p>
-            ) : null}
-          </div>
-        </div>
-        <div className="mbs-card-actions mbs-relationship-actions">
-          <span className="mbs-route-label">
-            {relationship.route === "native_group" ? t.nativeGroup : t.direct}
-          </span>
-          <button
-            type="button"
-            className="mbs-quiet-danger-button"
-            onClick={() => onReviewRemoval(relationship)}
-            disabled={removalWorking}
-          >
-            {t.reviewRemoval}
-          </button>
-        </div>
-      </div>
-      <CapabilityList clusters={relationship.clusters} t={t} />
-      {relationship.route === "native_group" ? <MemberList members={members} /> : null}
-    </article>
-  );
-}
-
 function ControlSetRow({
   controlSet,
   t,
@@ -1353,20 +1167,12 @@ function ControlSetRow({
   );
 }
 
-function relationshipTargetLabel(relationship: Relationship): string {
+export function relationshipTargetLabel(relationship: Relationship): string {
   return relationship.route === "native_group"
     ? relationship.targets.name
     : relationship.targets.members[0]
       ? endpointLabel(relationship.targets.members[0])
       : relationship.targets.name;
-}
-
-function EndpointName({ endpoint }: { endpoint: Endpoint }) {
-  return (
-    <div>
-      <strong>{endpointLabel(endpoint)}</strong>
-    </div>
-  );
 }
 
 function CapabilityList({ clusters, t }: { clusters: number[]; t: Copy }) {
@@ -1442,7 +1248,7 @@ function resolveLanguage(hass?: HomeAssistant): Language {
   return language.toLowerCase().startsWith("zh") ? "zh-Hant" : "en";
 }
 
-function clusterName(cluster: number, t: Copy): string {
+export function clusterName(cluster: number, t: Copy): string {
   if (cluster === 6) return t.onOff;
   if (cluster === 8) return t.brightness;
   if (cluster === 768) return t.colorTemperature;
