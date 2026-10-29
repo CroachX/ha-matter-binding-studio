@@ -88,6 +88,15 @@ class ProvenanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.describe(scope=None)["state"], "unknown")
         self.assertEqual(self.describe()["state"], "unknown")
 
+    async def test_identity_gap_during_write_retires_older_scoped_evidence(self):
+        op = await self.record()
+        await self.store.async_finish(op, verified=True)
+        unscoped = await self.record(scope=None, before=[ADMIN, grant()],
+                                     after=[ADMIN, grant(), grant((768,))])
+        self.assertEqual(self.describe()["state"], "unknown")
+        await self.store.async_finish(unscoped, verified=True)
+        self.assertEqual(self.describe()["state"], "unknown")
+
     async def test_edited_missing_or_duplicate_grant_cannot_reappear_as_owned(self):
         for observed in ([ADMIN], [ADMIN, grant((6,))], [ADMIN, grant(), grant()]):
             op = await self.record()

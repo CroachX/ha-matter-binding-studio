@@ -113,7 +113,15 @@ class ACLProvenanceStore:
             data = deepcopy(self._data)
             if data is None:
                 raise RuntimeError("Load ACL provenance before use")
-            self._invalidate(data, scope, before_counts)
+            if scope is None:
+                # An identity gap during a write must not let older scoped
+                # evidence look continuous when the client reconnects later.
+                # Bare node IDs may invalidate evidence, never establish it.
+                for op in data["operations"].values():
+                    if op["target_node_id"] == node_id:
+                        op["invalidated"] = sorted(op["added"])
+            else:
+                self._invalidate(data, scope, before_counts)
             data["operations"][operation_id] = {
                 "operation_id": operation_id, "scope": deepcopy(scope),
                 "target_node_id": node_id, "origin": deepcopy(origin),
@@ -167,7 +175,9 @@ class ACLProvenanceStore:
         # Pending writes are persisted across restarts. They cannot establish
         # ownership, and supersede earlier proof on the same target node.
         operations = self.operations()
-        blocked = any(op["scope"] == scope and op["status"] in ("pending", "uncertain")
+        blocked = any((op["scope"] == scope or (op["scope"] is None
+                       and op["target_node_id"] == scope["node_id"]))
+                      and op["status"] in ("pending", "uncertain")
                       for op in operations) if scope is not None else True
         candidates = [op for op in operations if scope is not None and op["scope"] == scope
                       and op["status"] == "verified" and key in op["added"]
