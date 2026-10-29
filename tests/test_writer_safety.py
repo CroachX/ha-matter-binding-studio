@@ -205,3 +205,31 @@ class GroupResourceTests(unittest.IsolatedAsyncioTestCase):
         value = w._group_wire_name("Study 主臥室智慧燈群組")
         self.assertLessEqual(len(value.encode("utf-8")), 16)
         self.assertTrue("Study 主臥室智慧燈群組".startswith(value))
+
+
+class GroupDiscoveryTests(unittest.TestCase):
+    def test_external_group_members_come_from_root_group_table(self):
+        groups = {}
+        rows = [{"groupId": 33, "endpoints": [1, 3], "groupName": "Room"}]
+        def cached(node, endpoint, cluster, attribute):
+            self.assertEqual((endpoint, cluster, attribute), (0, 63, 1))
+            return rows
+        with patch.object(matter, "_cached_attribute", side_effect=cached):
+            for ep in (1, 2, 3):
+                matter._add_cached_group_memberships(groups, None, ep,
+                    {"node_id": 7, "endpoint_id": ep, "capabilities": [6]})
+        self.assertEqual([m["endpoint_id"] for m in groups[33]["members"]], [1, 3])
+        self.assertFalse(groups[33]["managed_by_studio"])
+
+    def test_tagged_group_table(self):
+        groups = {}
+        with patch.object(matter, "_cached_attribute", return_value=[{"1": 33, "2": [1], "3": "Room"}]):
+            matter._add_cached_group_memberships(groups, None, 1,
+                {"node_id": 7, "endpoint_id": 1, "capabilities": [6]})
+        self.assertEqual(groups[33]["name"], "Room")
+
+    def test_cached_capacity_does_not_guess_key_slots(self):
+        values = {0: [], 1: [], 2: 4, 3: 3}
+        with patch.object(matter, "_cached_attribute", side_effect=lambda n, e, c, a: values[a]):
+            result = matter._group_capacity(None, 1, "Test")
+        self.assertIsNone(result["available_group_key_slots"])

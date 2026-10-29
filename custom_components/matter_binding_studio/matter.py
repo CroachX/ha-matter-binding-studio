@@ -592,15 +592,18 @@ def _add_cached_group_memberships(
     endpoint_id: int,
     endpoint: dict[str, Any],
 ) -> None:
-    """Merge the endpoint's cached Groups cluster table into a native set view."""
-    entries = _cached_attribute(raw_node, endpoint_id, CLUSTER_GROUPS, ATTR_GROUP_TABLE)
+    """Project root GroupKeyManagement.GroupTable members onto endpoints."""
+    entries = _cached_attribute(raw_node, 0, CLUSTER_GROUP_KEY_MANAGEMENT, ATTR_GROUP_TABLE)
     if not isinstance(entries, list):
         return
     for entry in entries:
-        group_id = _field_int(entry, ("GroupID", "groupID", "group_id", "group", 0))
+        group_id = _field_int(entry, ("GroupId", "groupId", "GroupID", "groupID", "group_id", 1))
         if group_id is None:
             continue
-        name = _field_text(entry, ("GroupName", "groupName", "group_name", "name", 1))
+        member_endpoints = _field_value(entry, ("Endpoints", "endpoints", 2))
+        if not isinstance(member_endpoints, (list, tuple)) or endpoint_id not in {_as_int(value) for value in member_endpoints}:
+            continue
+        name = _field_text(entry, ("GroupName", "groupName", "group_name", "name", 3))
         group = groups.setdefault(
             group_id,
             {
@@ -719,7 +722,9 @@ def _group_capacity(raw_node: Any, node_id: int, name: str) -> dict[str, Any]:
         "group_table_entries": group_table_count,
         "group_key_map_entries": group_map_count,
         "available_group_slots": _remaining_capacity(max_groups, group_table_count),
-        "available_group_key_slots": _remaining_capacity(max_keys, group_map_count),
+        # GroupKeyMap entries are not the number of allocated key sets: keys
+        # may be shared or have no mapping. Only a live command can count them.
+        "available_group_key_slots": None,
         "status": "available"
         if max_groups is not None or max_keys is not None
         else "unavailable",
