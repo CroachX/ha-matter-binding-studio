@@ -119,121 +119,19 @@ async def async_prepare_remove_acl(
     entry_index: int | None = None,
     entry_indexes: list[int] | None = None,
 ) -> dict[str, Any]:
-    """Prepare a guarded reclaim of explicitly selected unused ACL entries."""
-    snapshot = await async_get_snapshot(hass)
-    target = _find_endpoint(
-        snapshot.get("devices", []), target_node_id, target_endpoint_id
-    )
-    if target is None or not target.get("can_be_target"):
-        raise StudioWriteError(message("invalid_target"))
-    client = _require_client(hass)
-    entries = await _read_acl(client, target_node_id)
-    selected_indexes = _normalise_acl_removal_indexes(
-        entry_index=entry_index, entry_indexes=entry_indexes
-    )
-    if not selected_indexes:
-        raise StudioWriteError(message("choose_acl"))
+    """No Binding reference is not proof of an unused ACL grant.
 
-    endpoint_names = {
-        int(endpoint["endpoint_id"]): _endpoint_presentation_name(endpoint)
-        for endpoint in snapshot.get("devices", [])
-        if endpoint.get("node_id") == target_node_id
-        and endpoint.get("endpoint_id") is not None
-    }
-    node_names = _node_name_index(snapshot.get("devices", []))
-    group_names = {
-        int(group["group_id"]): str(group.get("name") or "Native group")
-        for group in snapshot.get("native_control_sets", [])
-    }
-    public_entries = []
-    selected_index_set = set(selected_indexes)
-    for index in selected_indexes:
-        if index < 0 or index >= len(entries):
-            raise StudioWriteError(
-                message("acl_entry_changed")
-            )
-        public_entry = _public_acl_entry(
-            entries[index],
-            index=index,
-            target_node_id=target_node_id,
-            endpoint_names=endpoint_names,
-            node_names=node_names,
-            group_names=group_names,
-            relationships=snapshot.get("relationships", []),
-        )
-        if not public_entry["usage"]["safe_to_reclaim"]:
-            raise StudioWriteError(
-                message("acl_reclaim_unsafe")
-            )
-        public_entries.append(public_entry)
-
-    entries_after = [
-        entry for index, entry in enumerate(entries) if index not in selected_index_set
-    ]
-    plan_id = secrets.token_urlsafe(24)
-    _pending_plans(hass)[plan_id] = {
-        "kind": "remove_acl",
-        "plan_id": plan_id,
-        "created_at": time.monotonic(),
-        "target": target,
-        "target_node_id": target_node_id,
-        "target_endpoint_id": target_endpoint_id,
-        "acl_before": entries,
-        "acl_after": entries_after,
-        "entry": public_entries[0],
-        "entries": public_entries,
-    }
-    _purge_expired_plans(hass)
-    return {
-        "plan_id": plan_id,
-        "expires_in_seconds": _PLAN_TTL_SECONDS,
-        "target": target,
-        "entry": public_entries[0],
-        "entries": public_entries,
-        "capacity_before": _public_acl_capacity(
-            await _read_acl_capacity(client, target_node_id, entries)
-        ),
-        "steps": [
-            message("step_read_acl"),
-            message("step_remove_acl", count=len(public_entries)),
-            message("step_keep_acl"),
-            message("step_write_acl"),
-        ],
-    }
+    Until durable provenance and live usage checks are available, generic ACL
+    removal is disabled. Studio-owned group cleanup has its own guarded path.
+    """
+    raise StudioWriteError(message("acl_reclaim_unproven"))
 
 
 @serialized_write
 async def async_apply_remove_acl(hass: HomeAssistant, *, plan_id: str) -> dict[str, Any]:
-    """Apply a reviewed ACL reclaim transaction and verify the whole table."""
-    plan = _take_plan(hass, plan_id, expected_kind="remove_acl")
-    target_node_id = int(plan["target_node_id"])
-    client = _require_client(hass)
-    current = await _read_acl(client, target_node_id)
-    if _acl_signature(current) != _acl_signature(plan["acl_before"]):
-        raise StudioWriteError(
-            message("acl_changed")
-        )
-    try:
-        await _write_acl(client, target_node_id, list(plan["acl_after"]))
-        for _ in range(_VERIFY_ATTEMPTS):
-            readback = await _read_acl(client, target_node_id)
-            if _acl_signature(readback) == _acl_signature(plan["acl_after"]):
-                return {
-                    "success": True,
-                    "verified": True,
-                    "message": message("acl_reclaimed", count=len(plan.get('entries', [plan['entry']]))),
-                    "target": plan["target"],
-                }
-            await asyncio.sleep(_VERIFY_DELAY_SECONDS)
-    except Exception as err:  # noqa: BLE001 - report uncertain configuration safely
-        _LOGGER.warning("Studio ACL reclaim could not be verified: %s", err)
-    return {
-        "success": False,
-        "verified": False,
-        "repair_needed": True,
-        "message": message("acl_reclaim_unverified"),
-        "target": plan["target"],
-    }
+    """Reject even a previously issued reclaim plan; never write an unknown ACL."""
+    _take_plan(hass, plan_id, expected_kind="remove_acl")
+    raise StudioWriteError(message("acl_reclaim_unproven"))
 
 
 def _normalise_acl_removal_indexes(
@@ -253,7 +151,7 @@ async def async_prepare_cleanup_group(
     group = store.get(group_id)
     if group is None:
         raise StudioWriteError(message("group_unmanaged"))
-    snapshot = await async_get_snapshot(hass)
+    snapshot = await async_get_snapshot(hass, fresh_bindings=True)
     _require_group_is_idle(snapshot, group_id)
     source = _find_endpoint(
         snapshot.get("devices", []), group.source_node_id, group.source_endpoint_id
@@ -313,7 +211,7 @@ async def async_apply_cleanup_group(
             raise StudioWriteError(
                 message("group_changed")
             )
-        snapshot = await async_get_snapshot(hass)
+        snapshot = await async_get_snapshot(hass, fresh_bindings=True)
         _require_group_is_idle(snapshot, group.group_id)
         client = _require_client(hass)
         members = list(plan["members"])
@@ -374,6 +272,8 @@ async def async_apply_cleanup_group(
 
 
 def _require_group_is_idle(snapshot: Mapping[str, Any], group_id: int) -> None:
+    if not snapshot.get("binding_inventory_complete") or snapshot.get("warnings"):
+        raise StudioWriteError(message("binding_inventory_incomplete"))
     active = [
         relationship
         for relationship in snapshot.get("relationships", [])
@@ -418,15 +318,10 @@ def _public_acl_entry(
         entry, target_node_id=target_node_id, relationships=relationships
     )
     subjects = entry.get("subjects")
-    concrete_subjects = isinstance(subjects, list) and bool(subjects)
-    concrete_targets = isinstance(entry.get("targets"), list)
     protected = privilege >= _ACL_PRIVILEGE_ADMINISTER
-    safe_to_reclaim = (
-        not protected
-        and not relationship_names
-        and concrete_subjects
-        and concrete_targets
-    )
+    # ACLs may authorize commands without any Binding, including external
+    # controllers. A missing reference is unknown usage, never safe deletion.
+    safe_to_reclaim = False
     return {
         "entry_index": index,
         "kind": "administrator" if protected else "operate",

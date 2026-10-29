@@ -1,5 +1,6 @@
 """Regression tests for real transaction code using isolated device boundaries."""
 import asyncio
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -107,3 +108,47 @@ class SerializationTests(unittest.IsolatedAsyncioTestCase):
         for name in dir(w):
             if name.startswith("async_apply_"):
                 self.assertTrue(hasattr(getattr(w, name), "__wrapped__"), name)
+
+
+class CleanupSafetyTests(unittest.IsolatedAsyncioTestCase):
+    def test_unknown_acl_usage_is_never_reclaimable(self):
+        for targets in (None, [], [{"endpoint": None, "cluster": None}],
+                        [{"endpoint": 1, "cluster": 6}]):
+            entry = dict(privilege=3, authMode=2, subjects=[99], targets=targets)
+            result = w._public_acl_entry(entry, index=0, target_node_id=2,
+                endpoint_names={}, node_names={}, group_names={}, relationships=[])
+            self.assertFalse(result["usage"]["safe_to_reclaim"])
+            self.assertEqual(result["usage"]["state"], "unknown")
+
+    async def test_prepare_and_legacy_apply_never_write_acl(self):
+        hass = SimpleNamespace(data={})
+        with patch.object(w, "_write_acl", AsyncMock()) as write:
+            with self.assertRaises(w.StudioWriteError):
+                await w.async_prepare_remove_acl(hass, target_node_id=2, target_endpoint_id=1, entry_index=0)
+            w._pending_plans(hass)["legacy"] = {"kind": "remove_acl", "created_at": time.monotonic()}
+            with self.assertRaises(w.StudioWriteError):
+                await w.async_apply_remove_acl(hass, plan_id="legacy")
+            write.assert_not_awaited()
+
+    def test_group_cleanup_fails_closed_on_partial_or_cached_inventory(self):
+        for snapshot in ({"relationships": []},
+                         {"relationships": [], "binding_inventory_complete": True, "warnings": ["offline"]}):
+            with self.assertRaises(w.StudioWriteError):
+                w._require_group_is_idle(snapshot, 33)
+        w._require_group_is_idle({"relationships": [], "binding_inventory_complete": True}, 33)
+        with self.assertRaises(w.StudioWriteError):
+            w._require_group_is_idle({"binding_inventory_complete": True, "relationships": [
+                {"route": "native_group", "targets": {"group_id": 33}}]}, 33)
+
+    async def test_fresh_binding_read_ignores_empty_cache(self):
+        client = SimpleNamespace(read_attribute=AsyncMock(return_value={"1/30/0": [{"group": 33}]}))
+        with patch.object(matter, "_cached_attribute", return_value=[]):
+            rows, failed = await matter._async_read_bindings(client, None, 1, 1, fresh=True)
+            self.assertFalse(failed)
+            self.assertEqual(rows[0]["target_group_id"], 33)
+            client.read_attribute.assert_awaited_once()
+
+    async def test_unreachable_binding_read_is_unknown_not_idle(self):
+        client = SimpleNamespace(read_attribute=AsyncMock(side_effect=RuntimeError("offline")))
+        with patch.object(matter, "_cached_attribute", return_value=[]):
+            self.assertEqual(await matter._async_read_bindings(client, None, 1, 1, fresh=True), ([], True))

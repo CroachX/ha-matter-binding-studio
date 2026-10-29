@@ -49,7 +49,7 @@ _MATTER_IDENTIFIER_RE = re.compile(
 )
 
 
-async def async_get_snapshot(hass: HomeAssistant) -> dict[str, Any]:
+async def async_get_snapshot(hass: HomeAssistant, *, fresh_bindings: bool = False) -> dict[str, Any]:
     """Create the complete operator-facing Studio read model.
 
     The only live device request permitted in this function is a Binding Cluster
@@ -99,6 +99,7 @@ async def async_get_snapshot(hass: HomeAssistant) -> dict[str, Any]:
                 "client_capabilities": client_controls,
                 "server_capabilities": server_controls,
                 "can_bind": bool(has_binding and client_controls),
+                "has_binding": has_binding,
                 "can_be_target": bool(server_controls),
             }
             endpoints[(node_id, endpoint_id)] = endpoint
@@ -112,11 +113,11 @@ async def async_get_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     warnings: list[str] = []
     bindings_by_source: dict[tuple[int, int], list[dict[str, int | None]]] = {}
     for source_key, endpoint in endpoints.items():
-        if not endpoint["can_bind"]:
+        if not endpoint["has_binding"]:
             continue
         raw_node = raw_endpoint_nodes[source_key]
         bindings, warning = await _async_read_bindings(
-            client, raw_node, source_key[0], source_key[1]
+            client, raw_node, source_key[0], source_key[1], fresh=fresh_bindings
         )
         bindings_by_source[source_key] = bindings
         if warning:
@@ -148,6 +149,7 @@ async def async_get_snapshot(hass: HomeAssistant) -> dict[str, Any]:
         "native_control_sets": native_control_sets,
         "capacities": capacities,
         "warnings": list(dict.fromkeys(warnings)),
+        "binding_inventory_complete": fresh_bindings and not warnings,
     }
 
 
@@ -520,10 +522,10 @@ def _matches_attribute(
 
 
 async def _async_read_bindings(
-    client: Any, raw_node: Any, node_id: int, endpoint_id: int
+    client: Any, raw_node: Any, node_id: int, endpoint_id: int, *, fresh: bool = False
 ) -> tuple[list[dict[str, int | None]], bool]:
     cached = _cached_attribute(raw_node, endpoint_id, CLUSTER_BINDING, ATTR_BINDING)
-    if cached is not None:
+    if cached is not None and not fresh:
         try:
             return _parse_bindings(cached), False
         except ValueError:
@@ -779,6 +781,7 @@ def _empty_snapshot(warning: str) -> dict[str, Any]:
         "native_control_sets": [],
         "capacities": [],
         "warnings": [warning],
+        "binding_inventory_complete": False,
     }
 
 
