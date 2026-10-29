@@ -8036,6 +8036,21 @@ var t = (e, t) => () => (t || (e((t = { exports: {} }).exports, t), e = null), t
 	}
 	n(), t.exports = c();
 })), u = a(), d = l(), f = {
+	acl_reclaim_unproven: {
+		en: "Generic ACL removal is disabled: absence of a Binding does not prove a rule is unused. Inspect only; use reviewed Studio-owned group cleanup where applicable.",
+		"zh-Hant": "暫停一般 ACL 清理：沒有 Binding 不代表規則未被使用。目前僅供檢視；Studio 自建群組可使用獨立的審核清理流程。",
+		"zh-Hans": "暂停一般 ACL 清理：没有 Binding 不代表规则未被使用。目前仅供检视；Studio 自建群组可使用独立的审核清理流程。"
+	},
+	binding_inventory_incomplete: {
+		en: "A complete live Binding inventory is required before group cleanup. Cached or failed reads cannot prove a group is idle.",
+		"zh-Hant": "清理群組前必須即時讀取完整 Binding 清單，快取或讀取失敗不能證明群組閒置。",
+		"zh-Hans": "清理群组前必须即时读取完整 Binding 清单，缓存或读取失败不能证明群组闲置。"
+	},
+	wildcard_binding_migration: {
+		en: "A selected target has an all-clusters Binding. Automatic group conversion is not supported for this relationship; review it separately first.",
+		"zh-Hant": "選取的目標有涵蓋全部能力的 Binding，暫不支援自動轉成群組，請先單獨檢視這條關係。",
+		"zh-Hans": "选取的目标有涵盖全部能力的 Binding，暂不支持自动转成群组，请先单独检视这条关系。"
+	},
 	invalid_target: {
 		en: "Choose a valid Matter output target.",
 		"zh-Hant": "請選擇有效的 Matter 輸出目標。",
