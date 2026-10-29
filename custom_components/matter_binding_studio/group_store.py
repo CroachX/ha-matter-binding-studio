@@ -9,6 +9,7 @@ remove an automatically managed groupcast relationship.
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 from dataclasses import dataclass
 from typing import Any
@@ -83,12 +84,14 @@ class ManagedGroupStore:
             store = Store(hass, _STORE_VERSION, _STORE_KEY)
         self._store = store
         self._data: dict[str, Any] | None = None
+        self._lock = asyncio.Lock()
 
     async def async_load(self) -> None:
-        if self._data is not None:
-            return
-        raw = await self._store.async_load()
-        self._data = {"groups": dict((raw or {}).get("groups", {}))}
+        async with self._lock:
+            if self._data is not None:
+                return
+            raw = await self._store.async_load()
+            self._data = {"groups": dict((raw or {}).get("groups", {}))}
 
     def list_groups(self) -> list[ManagedGroup]:
         data = self._require_loaded()
@@ -102,9 +105,11 @@ class ManagedGroupStore:
         return ManagedGroup.from_dict(value) if value else None
 
     async def async_put(self, group: ManagedGroup) -> None:
-        data = self._require_loaded()
-        data["groups"][str(group.group_id)] = group.to_dict()
-        await self._store.async_save(data)
+        async with self._lock:
+            data = {"groups": dict(self._require_loaded()["groups"])}
+            data["groups"][str(group.group_id)] = group.to_dict()
+            await self._store.async_save(data)
+            self._data = data
 
     async def async_set_status(self, group_id: int, status: str) -> ManagedGroup:
         group = self.get(group_id)
@@ -126,11 +131,13 @@ class ManagedGroupStore:
 
     async def async_remove(self, group_id: int) -> None:
         """Forget Studio metadata only after native cleanup has verified."""
-        data = self._require_loaded()
-        if str(group_id) not in data["groups"]:
-            raise KeyError(f"Unknown Studio group {group_id}")
-        del data["groups"][str(group_id)]
-        await self._store.async_save(data)
+        async with self._lock:
+            data = {"groups": dict(self._require_loaded()["groups"])}
+            if str(group_id) not in data["groups"]:
+                raise KeyError(f"Unknown Studio group {group_id}")
+            del data["groups"][str(group_id)]
+            await self._store.async_save(data)
+            self._data = data
 
     def _require_loaded(self) -> dict[str, Any]:
         if self._data is None:

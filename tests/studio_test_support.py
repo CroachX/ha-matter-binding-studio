@@ -20,7 +20,9 @@ def load_studio():
     modules["homeassistant.core"].HomeAssistant = object
     modules["homeassistant.components.matter"].DOMAIN = "matter"
     with patch.dict(sys.modules, modules):
-        return importlib.import_module("studio_under_test.writer"), importlib.import_module("studio_under_test.matter")
+        return (importlib.import_module("studio_under_test.writer"),
+                importlib.import_module("studio_under_test.matter"),
+                importlib.import_module("studio_under_test.group_store"))
 
 
-w, matter = load_studio()
+w, matter, group_store = load_studio()
