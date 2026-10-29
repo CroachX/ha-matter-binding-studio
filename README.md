@@ -9,8 +9,7 @@ family-facing controls.
 
 ## Current scope: reviewed native bindings and automatic groups
 
-The current source includes unreleased safety fixes on top of `0.5.0`.
-These changes are not installed by updating to the existing `0.5.0` release.
+Version `0.5.1` includes the safety fixes described below on top of `0.5.0`.
 The panel reads the existing Matter fabric and presents:
 
 - endpoint-backed Home Assistant names, including bridged functional endpoints
@@ -175,7 +174,8 @@ expired/changed plans, partial failure and persistence failures.
 ## Validation boundary and remaining work
 
 Local tests/builds are not device certification. Earlier `0.5.0` deployment
-and panel checks do not validate these unreleased changes. Before releasing:
+and panel checks do not validate the new device-write paths. Before relying on
+those paths with a particular device combination:
 
 - Validate discovery and loading on the target HA/Matter Server version.
 - Test physical single-target and multi-target control after readback.

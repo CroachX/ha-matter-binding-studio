@@ -5,7 +5,7 @@ guarded single-target native unicast and reviewed automatic multi-target
 groupcast creation with Binding/GroupTable readback, plus reviewed Binding
 removal (including batch removal) with full source-table readback, and guarded
 idle Studio-group cleanup. Editing and guided repair/resume remain deferred.
-Unreleased safety changes on top of v0.5.0 are documented below; local tests do
+Safety changes in v0.5.1 are documented below; local tests do
 not imply deployment or physical validation. Each newly supported device combination
 still needs a physical-control test after readback before it is treated as
 proven.
@@ -432,7 +432,7 @@ Confirmed:
 
 ## 10. Remaining implementation and validation
 
-1. Validate unreleased safety fixes against the target HA/Matter Server and
+1. Validate v0.5.1 safety fixes against the target HA/Matter Server and
    disposable device relationships, with separate physical-control checks.
 2. Add durable ACL ownership/provenance before enabling general reclaim.
 3. Design guided repair/resume and editing of existing group memberships.
