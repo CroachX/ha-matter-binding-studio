@@ -3,8 +3,10 @@
 Status: approved product direction. The current implementation provides
 guarded single-target native unicast and reviewed automatic multi-target
 groupcast creation with Binding/GroupTable readback, plus reviewed Binding
-removal with source-table readback. Editing, native-group cleanup, and repair
-actions remain intentionally deferred. Each newly supported device combination
+removal (including batch removal) with full source-table readback, and guarded
+idle Studio-group cleanup. Editing and guided repair/resume remain deferred.
+Unreleased safety changes on top of v0.5.0 are documented below; local tests do
+not imply deployment or physical validation. Each newly supported device combination
 still needs a physical-control test after readback before it is treated as
 proven.
 
@@ -328,20 +330,25 @@ number of least-privilege ACL entries allowed by the reported
 `TargetsPerAccessControlEntry` limit. If that limit is unavailable, Studio
 keeps one target per entry rather than assuming an unsupported table shape.
 
-An ACL entry is eligible for reclaim only when it is not an administrator rule,
-has concrete subjects and targets, and cannot be matched to any currently read
-Binding relationship. Reclaiming is never implicit: the operator reviews the
-single entry, confirms it, and Studio re-reads the complete ACL table before
-reporting success. A changed ACL table, an administrator entry, and an
-in-use/ambiguous rule all fail closed.
+Generic ACL reclaim is disabled until Studio can prove ownership and safe
+removal. Absence from discovered Bindings does not prove an ACL is unused;
+unmatched rules are unknown and the legacy reclaim API rejects writes. This
+does not disable cleanup of recorded, concrete Studio group grants. Future
+general reclaim needs durable provenance, fresh usage evidence, changed-table
+rejection and complete-table verification, not merely a missing Binding match.
 
 ## 7. Safety rules
 
 - Discovery is read-only.
+- All Studio mutation entry points share one transaction lock, including bulk
+  deletion, so different sources cannot overwrite a shared target's resources.
+  This is not a lock against external controllers or other HA integrations.
 - Before every write, capture the current source Binding table in the operation
   result and show it in diagnostics.
 - Creating a unicast relationship appends one target entry without dropping
-  existing entries.
+  existing entries, including omitted-cluster wildcard rows. Both append and
+  removal verify the complete source table. Unsupported table shapes stop
+  writes. Wildcard direct-to-group conversion is currently rejected.
 - Creating a groupcast relationship does not claim success until group
   membership, key/ACL provisioning, and source Binding Cluster read-back have
   each reported their result.
@@ -352,8 +359,10 @@ in-use/ambiguous rule all fail closed.
   place.
 - Before creating an automatic group, the Studio reads `MaxGroupsPerFabric`
   and `MaxGroupKeysPerFabric` for the source and every target. Version one
-  requires one available group slot and one available key slot on each
-  participating physical node.
+  requires an available group slot on each target node and an available key
+  slot on every participating node (a source-only node is not a group member).
+  Key counts come from KeySetReadAllIndices, not GroupKeyMap length. ACL budgets
+  are aggregated for endpoints sharing a physical node.
 - A partial failure is reported as partial; the UI must not describe it as an
   operational group binding.
 - Groupcast read-back verifies configuration, not a per-member acknowledgement
@@ -364,16 +373,22 @@ in-use/ambiguous rule all fail closed.
   remove target ACLs or clean up native-group state.
 - Studio may clean an idle, Studio-owned native group only through a separate
   review-and-confirm transaction. It rechecks that no Binding targets the
-  Group ID, removes concrete recorded group ACL targets, membership, Group Key
+  Group ID using fresh successful reads of every discovered Binding endpoint
+  on HA's fabric. An incomplete inventory blocks cleanup. It removes concrete
+  recorded group ACL targets, membership, Group Key
   mappings, and Key Sets, then removes local metadata only after confirmation.
   Any uncertain partial result stays `repair_needed`; Studio never cleans a
-  group created by another controller.
+  group without Studio ownership metadata. This cannot prove absence of use
+  by unknown sources or external controllers; Studio group IDs must not be
+  repurposed outside Studio. Key removal requires no remaining mapping and
+  is verified by listing IDs. The remaining ACL/key-map tables are verified
+  in full; ambiguous wildcard ACL targets are preserved.
 - The Studio never creates a hidden virtual device to stand in for a group.
 
-## 8. Existing backend to retain
+## 8. Backend boundary
 
-The current fork already has the protocol-sensitive pieces that should remain
-behind a stable API:
+The independent `ha-matter-binding-studio` integration contains the following
+protocol-sensitive pieces behind its administrator-only WebSocket API:
 
 - native Binding Cluster read/write and read-back verification
 - preserving existing Binding TargetStruct entries on append
@@ -382,8 +397,9 @@ behind a stable API:
   provisioning
 - Matter node discovery and Home Assistant registry lookup
 
-Only the presentation/API shape required by the new UI should be added. The
-existing raw diagnostic panel can remain as an advanced view during migration.
+There is no separate backend service or runtime relay. Advanced diagnostics
+remain collapsed in the panel. General ACL reclaim awaits ownership evidence;
+an explicit guided group repair/resume workflow is not yet implemented.
 
 ## 9. Decision log
 
@@ -400,8 +416,9 @@ Confirmed:
    first version.
 6. The native Binding-table registry and relationship overview are first-version
    features.
-7. Deliver the Studio as a panel in the current CroachX Matter Binding Helper
-   fork. Do not create a separate backend service.
+7. Deliver the Studio as an independent `ha-matter-binding-studio` custom
+   integration, separate from the Helper fork. Do not create a separate backend
+   service.
 8. Keep the Studio admin-only; Home Assistant remains the family-facing
    dashboard and app.
 9. Hide unicast versus groupcast from the normal authoring flow. The user picks
@@ -413,12 +430,16 @@ Confirmed:
     relationship in version one. Capacity preflight is mandatory before a
     multi-target write.
 
-## 10. Proposed discussion order
+## 10. Remaining implementation and validation
 
-1. Confirm the product model and safety boundary.
-2. Define the inventory, automatic-control-set section, binding composer, and
-   binding registry information hierarchy using the Study setup as the first
-   real scenario.
-3. Connect the approved prototype to a read-only discovery API.
-4. Add the reviewed write, preflight, provisioning, and read-back sequence only
-   after the API contract and rollback evidence are agreed.
+1. Validate unreleased safety fixes against the target HA/Matter Server and
+   disposable device relationships, with separate physical-control checks.
+2. Add durable ACL ownership/provenance before enabling general reclaim.
+3. Design guided repair/resume and editing of existing group memberships.
+4. Add persistent last-verified timestamps and operation history.
+
+Current offline coverage includes the production writer/store lifecycle with
+a fake Matter transport, single-use/expiry and changed-table guards, unknown
+table/read failures, shared-resource serialization, and partial-cleanup retry.
+HA UI rendering, actual Matter Server wire compatibility and physical-device
+effects remain separate acceptance gates. No real Binding is changed by tests.

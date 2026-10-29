@@ -9,12 +9,18 @@ family-facing controls.
 
 ## Current scope: reviewed native bindings and automatic groups
 
-Version `0.5.0` reads the existing Matter fabric and presents:
+The current source includes unreleased safety fixes on top of `0.5.0`.
+These changes are not installed by updating to the existing `0.5.0` release.
+The panel reads the existing Matter fabric and presents:
 
 - endpoint-backed Home Assistant names, including bridged functional endpoints
 - existing Binding Cluster relationships, shown as direct or native-group routes
-- cached native Matter group membership where devices expose it
-- cached Group and Group Key capacity without exposing any key material.
+- cached native Matter group membership from the root Group Key Management
+  `GroupTable`, where devices expose it
+- cached Group capacity and reported limits without exposing key material.
+  Available key slots stay unknown in discovery: GroupKeyMap length is not
+  the number of allocated key sets. Group write preflight enumerates actual
+  IDs using `KeySetReadAllIndices`.
 
 The **Target ACL** section reads one selected output endpoint on demand. It
 shows the device-reported ACL capacity, administrator and operate rules, named
@@ -22,19 +28,22 @@ sources and endpoints, and whether a rule can be matched to a currently known
 native Binding. It deliberately does not query every target whenever the
 Fabric refreshes.
 
-An explicitly unused operate rule with concrete source and target fields can
-be reclaimed through its own review-and-confirm transaction. Studio never
-offers administrator rules or a rule matched to a current Binding for reclaim;
-the complete remaining ACL table is read back before success is reported.
+**Generic ACL reclaim is disabled pending ownership tracking.** A rule without
+a matching Binding is labelled unknown, not unused: it may authorize another
+application or a source that could not be read. Administrator rules remain
+protected. The legacy reclaim API rejects requests without writing. Cleanup of
+recorded Studio group grants remains a separate, guarded operation.
 
 It can create a **single-target native unicast** relationship after a reviewed
 plan and explicit confirmation. The transaction reads the current source
 Binding list and target ACL, adds only the needed target access entry, writes
-the Binding list, then reads the Binding Cluster back. If the binding cannot
+the Binding list, then compares the complete Binding table by readback,
+including pre-existing entries. If the binding cannot
 be verified, Studio reports that state rather than claiming success.
 
 Before any unicast or groupcast provisioning begins, Studio also checks the
-target ACL's reported entry capacity. A known-full ACL is rejected during plan
+target ACL's reported entry capacity, aggregating all selected endpoints on
+the same physical node. A known-full ACL is rejected during plan
 review, before any Binding, Group Key, or group-membership write is attempted.
 When a target reports more than one ACL target slot per entry, compatible
 capabilities for the same source and endpoint are packed into the fewest
@@ -52,7 +61,10 @@ local storage and is never sent to the panel.
 This is still a device-dependent Matter operation: the first real deployment
 must be physically tested after the readback. If provisioning stops part-way,
 the Studio records the group as needing repair instead of presenting it as
-ready.
+ready. Valid Bindings with an omitted cluster (wildcard) are preserved;
+automatic conversion of a matching wildcard direct Binding to a group is
+rejected rather than silently narrowing its scope. Unsupported Binding table
+shapes stop writes instead of being discarded.
 
 Existing direct and groupcast relationships can be removed through a separate
 review-and-confirm transaction. Studio first re-reads the source Binding table,
@@ -60,10 +72,16 @@ removes only the entries belonging to the selected relationship, writes the
 remaining table, then verifies the full table by readback. Removing a groupcast
 relationship leaves its native group, Group Key, membership, and ACLs intact.
 An idle group that was automatically created by Studio can then be cleaned up
-through a separate reviewed action. It rechecks that no Binding targets the
-Group ID, removes its recorded ACL targets, members, Group Key mappings, and
+through a separate reviewed action. Both review and apply require successful
+live reads from every discovered Binding endpoint on HA's fabric; offline or
+unreadable sources block cleanup. It rechecks that no Binding targets the
+Group ID, removes concrete recorded ACL targets, members, Group Key mappings, and
 Key Sets, then drops local metadata only after the device operations verify.
+The remaining ACL and key-mapping tables are compared in full, and key removal
+is verified by enumerating IDs. Ambiguous wildcard ACL targets are not deleted.
 If an operation is uncertain, the group remains recorded as needing repair.
+This checks HA's discovered fabric, not unknown sources or other controllers'
+independent activity. Do not repurpose Studio-owned group IDs outside Studio.
 
 ## Compact UI and batch deletion
 
@@ -74,12 +92,16 @@ Native groups and advanced ACL/capacity tools are collapsed by default.
 
 Selected relationships can be deleted together after one reviewed confirmation.
 The backend resolves the selection against a fresh snapshot and prepares one
-remaining Binding table per source endpoint. Apply uses the existing source
-lock, rejects tables changed since review, writes once per source, and verifies
+remaining Binding table per source endpoint. All Studio mutation operations
+share one transaction lock to protect shared target ACLs and Group Key tables,
+in addition to the source endpoint lock. Apply rejects tables changed since
+review, writes once per source, and verifies
 readback. Results distinguish verified deletion, changed tables, failed reads,
 and uncertain writes. This is **not an atomic transaction across devices**;
 successful sources remain applied if another source fails. Binding deletion
-never removes target ACLs, Group Keys, or group membership.
+never removes target ACLs, Group Keys, or group membership. The lock does not
+serialize other HA integrations, external controllers, or device firmware;
+avoid concurrent configuration through those tools.
 
 The new administrator-only WebSocket commands are
 `matter_binding_studio/prepare_bulk_remove_bindings` (`relationship_ids`, 1–200)
@@ -124,7 +146,7 @@ panel. The update itself does not write any Binding, ACL, or group configuration
 ## Development
 
 ```bash
-npm install
+npm ci
 npm run build
 node --test tests/messages.test.cjs
 python -m unittest discover -s tests -v
@@ -143,9 +165,38 @@ For a standalone visual preview, run `npm run dev`. It intentionally has no
 Home Assistant connection; it uses mock data to exercise the multi-target
 groupcast review flow without changing any Matter device.
 
+CI runs the standard-library Python suite on Python 3.12/3.13, Node message
+tests, a TypeScript/production build, and checks that the committed HACS bundle
+matches source. Python tests use HA boundary stubs, not an installed HA runtime.
+Lifecycle tests run the actual writer and group store against an in-memory
+Matter transport, covering direct-to-group migration, removal, cleanup,
+expired/changed plans, partial failure and persistence failures.
+
+## Validation boundary and remaining work
+
+Local tests/builds are not device certification. Earlier `0.5.0` deployment
+and panel checks do not validate these unreleased changes. Before releasing:
+
+- Validate discovery and loading on the target HA/Matter Server version.
+- Test physical single-target and multi-target control after readback.
+- With explicit approval, test destructive batch deletion, idle group cleanup,
+  and failure/retry on expendable device relationships. Existing household
+  Bindings must not be used as destructive test fixtures without approval.
+
+Not implemented yet:
+
+- Editing an existing relationship or its group members in place.
+- A guided repair/resume UI. Partial groups retain metadata; idle-group cleanup
+  can be retried, but provisioning is not automatically resumed or rolled back.
+- Durable provenance for general ACL reclaim, including ownership of old rules.
+- Persistent last-verified timestamps and operation history in the panel.
+
+State projection, automation suggestions and heuristic binding recommendations
+remain outside the current scope. Studio is not a runtime command relay.
+
 ## Design
 
-The product decisions and future write-transaction safety boundary are
+The product decisions, current implementation and remaining safety work are
 recorded in [the native binding Studio specification](docs/native-binding-studio-spec.md).
 
 Before a write, validate the proposed source and target against the live
