@@ -58,7 +58,7 @@ class MatterNamesTest(unittest.TestCase):
                                          [identifier("MatterNodeDevice")]), (16, 2))
 
     def test_registry_names_and_areas_follow_each_entity(self):
-        for roots in ((51, 75), (75, 51)):
+        for roots, modern in (((51, 75), False), ((75, 51), False), ((75, 51), True)):
             device = NS(id="switch", identifiers=[identifier(root) for root in roots],
                         name_by_user="Study switch", name=None, area_id="study")
             entities = {
@@ -70,7 +70,8 @@ class MatterNamesTest(unittest.TestCase):
                                name="Identify", original_name=None),
             }
             namespace.update(
-                dr=NS(async_get=lambda _: NS(devices={"switch": device})),
+                dr=NS(async_get=lambda _: NS(devices=[device] if modern else {"switch": device},
+                                             async_get=lambda _: device)),
                 er=NS(async_get=lambda _: NS(entities=entities)),
                 ar=NS(async_get=lambda _: NS(async_get_area=lambda _: NS(name="Study"))),
             )

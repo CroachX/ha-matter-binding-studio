@@ -6,6 +6,7 @@ from homeassistant.components import frontend, panel_custom
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from . import api
 from .const import DOMAIN, PANEL_ICON, PANEL_NAME, PANEL_TITLE
 
 
@@ -19,8 +20,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up one Studio config entry."""
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {}
     await _async_register_panel(hass)
-
-    from . import api
 
     await api.async_setup(hass)
     return True

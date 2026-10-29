@@ -52,10 +52,10 @@ _MATTER_IDENTIFIER_RE = re.compile(
 async def async_get_snapshot(hass: HomeAssistant, *, fresh_bindings: bool = False) -> dict[str, Any]:
     """Create the complete operator-facing Studio read model.
 
-    The only live device request permitted in this function is a Binding Cluster
-    attribute read when that attribute is absent from the Matter-server cache.
-    This is a read operation. All group and Group Key capacity information is
-    derived from cached attributes only.
+    Binding attributes normally use the Matter-server cache, reading live when
+    absent. Cleanup passes fresh_bindings=True to require live reads from every
+    discovered Binding endpoint. Group information is cache-derived; this
+    function never writes devices or enumerates secret key material.
     """
     client = _get_matter_client(hass)
     if client is None:
@@ -243,7 +243,12 @@ def _build_name_index(hass: HomeAssistant) -> dict[str, dict[Any, Any]]:
         if entity.device_id:
             entities_by_device.setdefault(entity.device_id, []).append(entity)
 
-    for device in device_registry.devices.values():
+    for device in device_registry.devices:
+        # HA 2026.9+ iterates DeviceEntry objects; older versions yield IDs.
+        if isinstance(device, str):
+            device = device_registry.async_get(device)
+        if device is None:
+            continue
         identifiers = sorted(
             identifier for identifier in device.identifiers
             if _parse_matter_identifier(identifier) is not None
