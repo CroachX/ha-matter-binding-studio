@@ -8,7 +8,7 @@ from types import ModuleType, SimpleNamespace as NS
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from studio_test_support import w, matter, group_store
+from studio_test_support import w, matter, group_store, acl_store
 
 
 def command(name):
@@ -17,6 +17,7 @@ def command(name):
 
 class Fabric:
     def __init__(self):
+        self.server_info = NS(compressed_fabric_id=1234)
         self.attributes = {}
         self.keys = {node: {0} for node in (1, 2, 3)}
         self.operations = []
@@ -32,6 +33,9 @@ class Fabric:
             can_bind=node == 1, can_be_target=node != 1,
             client_capabilities=[6, 8] if node == 1 else [],
             server_capabilities=[6, 8] if node != 1 else []) for node in self.keys]
+
+    def get_node(self, node_id):
+        return NS(node_data=NS(date_commissioned="2026-10-01T00:00:00+00:00"))
 
     async def snapshot(self, _hass, *, fresh_bindings=False):
         bindings = {(1, 1): matter._parse_bindings(self.attributes[1]["1/30/0"])}
@@ -90,6 +94,9 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.storage = NS(async_load=AsyncMock(return_value=None), async_save=AsyncMock())
         self.store = group_store.ManagedGroupStore(self.hass, self.storage)
         self.hass.data[w.DOMAIN] = {"_managed_group_store": self.store}
+        self.acl_storage = NS(async_load=AsyncMock(return_value=None), async_save=AsyncMock())
+        self.acl_store = acl_store.ACLProvenanceStore(self.hass, self.acl_storage)
+        self.hass.data[w.DOMAIN]["_acl_provenance_store"] = self.acl_store
         clusters = ModuleType("chip.clusters")
         clusters.Objects = NS(
             Groups=NS(Commands=NS(AddGroup=command("AddGroup"), RemoveGroup=command("RemoveGroup"))),

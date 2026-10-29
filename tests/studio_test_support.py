@@ -22,7 +22,8 @@ def load_studio():
     with patch.dict(sys.modules, modules):
         return (importlib.import_module("studio_under_test.writer"),
                 importlib.import_module("studio_under_test.matter"),
-                importlib.import_module("studio_under_test.group_store"))
+                importlib.import_module("studio_under_test.group_store"),
+                importlib.import_module("studio_under_test.acl_store"))
 
 
-w, matter, group_store = load_studio()
+w, matter, group_store, acl_store = load_studio()

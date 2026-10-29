@@ -19,6 +19,7 @@ from homeassistant.core import HomeAssistant
 
 from .messages import message
 from .transactions import serialized_write
+from .acl_store import get_acl_store, identity_scope
 
 from .const import (
     ATTR_ACCESS_CONTROL_ENTRIES_PER_FABRIC,
@@ -59,6 +60,7 @@ class StudioWriteError(RuntimeError):
     """A user-safe write transaction error."""
 
 
+@serialized_write
 async def async_get_acl_overview(
     hass: HomeAssistant,
     *,
@@ -82,6 +84,10 @@ async def async_get_acl_overview(
     client = _require_client(hass)
     entries = await _read_acl(client, target_node_id)
     capacity = await _read_acl_capacity(client, target_node_id, entries)
+    provenance = get_acl_store(hass)
+    await provenance.async_load()
+    scope = identity_scope(client, target_node_id)
+    await provenance.async_observe(scope, entries)
     endpoint_names = {
         int(endpoint["endpoint_id"]): _endpoint_presentation_name(endpoint)
         for endpoint in snapshot.get("devices", [])
@@ -106,6 +112,12 @@ async def async_get_acl_overview(
                 group_names=group_names,
                 relationships=snapshot.get("relationships", []),
             )
+            | {"provenance": provenance.describe(scope, entries, entry),
+               "references": _acl_relationship_references(
+                   entry, target_node_id=target_node_id,
+                   relationships=snapshot.get("relationships", [])),
+               "references_complete": bool(snapshot.get("binding_inventory_complete"))
+                   and not snapshot.get("warnings")}
             for index, entry in enumerate(entries)
         ],
     }
@@ -227,6 +239,7 @@ async def async_apply_cleanup_group(
                 ]
                 await _remove_group_acl_grants(
                     client,
+                    hass=hass,
                     node_id=int(member["node_id"]),
                     endpoint_id=int(member["endpoint_id"]),
                     group_id=group.group_id,
@@ -456,6 +469,30 @@ def _acl_relationship_names(
     return list(dict.fromkeys(names))
 
 
+def _acl_relationship_references(
+    entry: Mapping[str, Any], *, target_node_id: int,
+    relationships: list[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Known references only: absence in a snapshot is never proof of non-use.
+
+    CASE subjects address nodes, not source endpoints, so multiple source
+    endpoints may share one grant. Keep stable relationship IDs, not a refcount
+    based on labels; counts must be derived from this list at observation time.
+    """
+    result = {}
+    for row in relationships:
+        if row.get("id") and _acl_relationship_names(
+            entry, target_node_id=target_node_id, relationships=[row]
+        ):
+            result[row["id"]] = {
+                "relationship_id": row["id"], "name": _relationship_presentation_name(row),
+                "source_node_id": row["source"]["node_id"],
+                "source_endpoint_id": row["source"]["endpoint_id"],
+                "clusters": list(row.get("clusters", [])),
+            }
+    return [result[key] for key in sorted(result)]
+
+
 def _relationship_presentation_name(relationship: Mapping[str, Any]) -> str:
     source = relationship.get("source") or {}
     source_name = str(source.get("name") or "Matter control")
@@ -595,7 +632,12 @@ async def async_apply_unicast(hass: HomeAssistant, *, plan_id: str) -> dict[str,
             _require_acl_capacity(acl_capacity, len(acl_entries_to_add))
             acl_payload = list(current_acl)
             acl_payload.extend(acl_entries_to_add)
-            await _write_acl(client, target_node_id, acl_payload)
+            await _write_recorded_acl(
+                hass, client, target_node_id, before=current_acl, after=acl_payload,
+                origin={"kind": "unicast", "source_node_id": source_node_id,
+                        "source_endpoint_id": source_endpoint_id,
+                        "target_endpoint_id": target_endpoint_id},
+            )
             verified_acl = await _verify_acl(
                 client,
                 target_node_id,
@@ -831,6 +873,9 @@ async def async_apply_groupcast(hass: HomeAssistant, *, plan_id: str) -> dict[st
                 if member_clusters:
                     await _ensure_group_acl(
                         client,
+                        hass=hass,
+                        source_node_id=source_key[0],
+                        source_endpoint_id=source_key[1],
                         node_id=int(member["node_id"]),
                         endpoint_id=int(member["endpoint_id"]),
                         group_id=group.group_id,
@@ -1685,6 +1730,9 @@ def _group_info_endpoints(entry: Any) -> set[int]:
 async def _ensure_group_acl(
     client: Any,
     *,
+    hass: HomeAssistant,
+    source_node_id: int,
+    source_endpoint_id: int,
     node_id: int,
     endpoint_id: int,
     group_id: int,
@@ -1701,7 +1749,12 @@ async def _ensure_group_acl(
     capacity = await _read_acl_capacity(client, node_id, entries)
     entries_to_add = _new_group_acl_entries(group_id, endpoint_id, required, capacity)
     _require_acl_capacity(capacity, len(entries_to_add))
-    await _write_acl(client, node_id, [*entries, *entries_to_add])
+    await _write_recorded_acl(
+        hass, client, node_id, before=entries, after=[*entries, *entries_to_add],
+        origin={"kind": "groupcast", "group_id": group_id,
+                "source_node_id": source_node_id, "source_endpoint_id": source_endpoint_id,
+                "target_endpoint_id": endpoint_id},
+    )
     for _ in range(_VERIFY_ATTEMPTS):
         verified = await _read_acl(client, node_id)
         if all(
@@ -1716,6 +1769,7 @@ async def _ensure_group_acl(
 async def _remove_group_acl_grants(
     client: Any,
     *,
+    hass: HomeAssistant,
     node_id: int,
     endpoint_id: int,
     group_id: int,
@@ -1737,7 +1791,11 @@ async def _remove_group_acl_grants(
         )
     if not changed:
         return
-    await _write_acl(client, node_id, remaining)
+    await _write_recorded_acl(
+        hass, client, node_id, before=entries, after=remaining,
+        origin={"kind": "group_cleanup", "group_id": group_id,
+                "target_endpoint_id": endpoint_id},
+    )
     for _ in range(_VERIFY_ATTEMPTS):
         verified = await _read_acl(client, node_id)
         if _acl_signature(verified) == _acl_signature(remaining):
@@ -2471,6 +2529,36 @@ def _acl_target_chunks(
         return []
     limit = max(capacity.get("targets_per_entry") or 1, 1)
     return [normalized[index : index + limit] for index in range(0, len(normalized), limit)]
+
+
+async def _write_recorded_acl(
+    hass: HomeAssistant, client: Any, node_id: int, *,
+    before: list[dict[str, Any]], after: list[dict[str, Any]], origin: dict[str, Any],
+) -> None:
+    """Journal intent before a device write; confirm only after full readback.
+
+    Storage failure before begin prevents device I/O. A failed final save leaves
+    pending evidence on disk and never reports an unrecorded write as verified.
+    Caller must hold the integration transaction lock.
+    """
+    store = get_acl_store(hass)
+    await store.async_load()
+    origin = dict(origin)
+    if origin.get("source_node_id") is not None:
+        origin["source_scope"] = identity_scope(client, int(origin["source_node_id"]))
+    operation = await store.async_begin(
+        scope=identity_scope(client, node_id), node_id=node_id,
+        before=before, after=after, origin=origin,
+    )
+    try:
+        await _write_acl(client, node_id, after)
+    except Exception:
+        try:
+            await store.async_finish(operation, verified=False)
+        except Exception:  # Keep durable pending evidence if storage also fails.
+            _LOGGER.warning("Could not finalize uncertain ACL provenance")
+        raise
+    await store.async_finish(operation, verified=True)
 
 
 async def _write_acl(client: Any, node_id: int, entries: list[dict[str, Any]]) -> None:

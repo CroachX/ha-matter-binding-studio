@@ -150,11 +150,11 @@ class CleanupSafetyTests(unittest.IsolatedAsyncioTestCase):
                      targets=[dict(endpoint=1, cluster=6, deviceType=None)])
         other = dict(privilege=5, authMode=2, subjects=[99], targets=None)
         with (patch.object(w, "_read_acl", AsyncMock(side_effect=[[owned, other], []])),
-              patch.object(w, "_write_acl", AsyncMock()),
+              patch.object(w, "_write_recorded_acl", AsyncMock()),
               patch.object(w, "_VERIFY_ATTEMPTS", 1),
               patch.object(w, "_VERIFY_DELAY_SECONDS", 0)):
             with self.assertRaises(w.StudioWriteError):
-                await w._remove_group_acl_grants(None, node_id=2, endpoint_id=1, group_id=33, clusters=[6])
+                await w._remove_group_acl_grants(None, hass=None, node_id=2, endpoint_id=1, group_id=33, clusters=[6])
 
     def test_unknown_acl_usage_is_never_reclaimable(self):
         for targets in (None, [], [{"endpoint": None, "cluster": None}],
