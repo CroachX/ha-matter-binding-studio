@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from studio_test_support import w
+from studio_test_support import w, matter
 
 
 def binding(node, cluster=6):
@@ -34,3 +34,32 @@ class VerificationTests(unittest.IsolatedAsyncioTestCase):
         with (patch.object(w, "_read_fabric_index", AsyncMock(return_value=1)),
               patch.object(w, "_read_bindings", AsyncMock(return_value=expected))):
             self.assertTrue(await w._write_and_verify_bindings(client, 1, 1, expected, 8, 1, [6]))
+
+
+class BindingParsingTests(unittest.TestCase):
+    def test_wildcard_survives_roundtrip(self):
+        rows = matter._parse_bindings([{"node": 7, "endpoint": 1}, {"group": 33}])
+        self.assertEqual(len(rows), 2)
+        self.assertIsNone(rows[0]["cluster_id"])
+        self.assertTrue(w._binding_exists(rows, node_id=7, endpoint_id=1, cluster_id=8))
+        for tagged in (True, False):
+            encoded = [w._encode_binding(row, 1, tagged) for row in rows]
+            self.assertEqual(matter._parse_bindings(encoded), rows)
+
+    def test_unknown_shapes_fail_closed(self):
+        for value in ({"error": "offline"}, None, [{}], [{"node": 2}],
+                      [{"node": 2, "group": 3, "endpoint": 1}],
+                      [{"node": 2, "endpoint": 1, "cluster": "invalid"}]):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                matter._parse_bindings(value)
+
+    def test_wildcard_conversion_is_rejected(self):
+        with self.assertRaises(w.StudioWriteError):
+            w._matching_direct_entries([binding(7, None)], [{"node_id": 7, "endpoint_id": 1}], [6])
+
+    def test_missing_target_keeps_technical_identity_for_removal(self):
+        source = {"node_id": 1, "endpoint_id": 1, "name": "Controller", "client_capabilities": [6, 8]}
+        rows = matter._relationships_from_bindings({(1, 1): [binding(7, None)]}, {(1, 1): source}, {})
+        self.assertEqual(rows[0]["targets"]["members"][0]["node_id"], 7)
+        self.assertTrue(rows[0]["has_wildcard_cluster"])
+        self.assertEqual(rows[0]["clusters"], [6, 8])

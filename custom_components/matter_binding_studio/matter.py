@@ -524,7 +524,10 @@ async def _async_read_bindings(
 ) -> tuple[list[dict[str, int | None]], bool]:
     cached = _cached_attribute(raw_node, endpoint_id, CLUSTER_BINDING, ATTR_BINDING)
     if cached is not None:
-        return _parse_bindings(cached), False
+        try:
+            return _parse_bindings(cached), False
+        except ValueError:
+            return [], True
 
     attribute_path = f"{endpoint_id}/{CLUSTER_BINDING}/{ATTR_BINDING}"
     try:
@@ -536,13 +539,16 @@ async def _async_read_bindings(
         return [], True
     if isinstance(value, Mapping):
         value = value.get(attribute_path, value)
-    return _parse_bindings(_unwrap(value)), False
+    try:
+        return _parse_bindings(_unwrap(value)), False
+    except ValueError:
+        return [], True
 
 
 def _parse_bindings(value: Any) -> list[dict[str, int | None]]:
     value = _unwrap(value)
     if not isinstance(value, list):
-        return []
+        raise ValueError("Unsupported Binding table shape")
     parsed: list[dict[str, int | None]] = []
     for entry in value:
         group_id = _field_int(
@@ -556,8 +562,17 @@ def _parse_bindings(value: Any) -> list[dict[str, int | None]]:
         cluster_id = _field_int(
             entry, ("Cluster", "cluster", "ClusterId", "clusterId", "cluster_id", 4)
         )
-        if cluster_id is None or (group_id is None and node_id is None):
-            continue
+        # Cluster is optional: absence means all applicable client clusters.
+        # Never silently drop a row before rewriting the complete device table.
+        if (group_id is None) == (node_id is None):
+            raise ValueError("Binding must have exactly one node or group target")
+        if node_id is not None and endpoint_id is None:
+            raise ValueError("Unicast Binding has no endpoint")
+        if group_id is not None and endpoint_id is not None:
+            raise ValueError("Group Binding has an unexpected endpoint")
+        raw_cluster = _field_value(entry, ("Cluster", "cluster", "ClusterId", "clusterId", "cluster_id", 4))
+        if raw_cluster is not None and cluster_id is None:
+            raise ValueError("Invalid Binding cluster identifier")
         parsed.append(
             {
                 "target_group_id": group_id,
@@ -632,7 +647,11 @@ def _relationships_from_bindings(
                     binding["target_node_id"],
                     binding["target_endpoint_id"],
                 )
-                endpoint = endpoints.get(target_key, _unavailable_endpoint())
+                endpoint = endpoints.get(target_key, {
+                    **_unavailable_endpoint(),
+                    "node_id": target_key[0], "endpoint_id": target_key[1],
+                    "name": f"Node {target_key[0]} · Endpoint {target_key[1]}",
+                })
                 target = {
                     "kind": "endpoint",
                     "name": endpoint["name"],
@@ -648,9 +667,14 @@ def _relationships_from_bindings(
                     "targets": target,
                     "route": route,
                     "clusters": [],
+                    "has_wildcard_cluster": False,
                 },
             )
-            relationship["clusters"].append(binding["cluster_id"])
+            if binding["cluster_id"] is None:
+                relationship["has_wildcard_cluster"] = True
+                relationship["clusters"].extend(source.get("client_capabilities", []))
+            else:
+                relationship["clusters"].append(binding["cluster_id"])
 
     relationships = list(relationship_map.values())
     for relationship in relationships:

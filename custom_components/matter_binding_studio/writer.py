@@ -1236,6 +1236,12 @@ def _matching_direct_entries(
     selected_targets = {
         (int(member["node_id"]), int(member["endpoint_id"])) for member in members
     }
+    if any(entry.get("target_group_id") is None
+           and (entry.get("target_node_id"), entry.get("target_endpoint_id")) in selected_targets
+           and entry.get("cluster_id") is None for entry in bindings):
+        # Splitting a wildcard into selected clusters could silently remove
+        # other capabilities or leave duplicate direct/group delivery.
+        raise StudioWriteError(message("wildcard_binding_migration"))
     selected_clusters = set(clusters)
     return [
         entry
@@ -1952,7 +1958,7 @@ def _binding_group_exists(
 ) -> bool:
     return any(
         entry.get("target_group_id") == group_id
-        and entry.get("cluster_id") == cluster_id
+        and entry.get("cluster_id") in (None, cluster_id)
         for entry in bindings
     )
 
@@ -2171,7 +2177,7 @@ def _binding_exists(
         entry.get("target_group_id") is None
         and entry.get("target_node_id") == node_id
         and entry.get("target_endpoint_id") == endpoint_id
-        and entry.get("cluster_id") == cluster_id
+        and entry.get("cluster_id") in (None, cluster_id)
         for entry in bindings
     )
 
