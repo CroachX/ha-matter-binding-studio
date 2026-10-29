@@ -111,6 +111,40 @@ class SerializationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class CleanupSafetyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_single_removal_supports_wildcard_entries(self):
+        hass = SimpleNamespace(data={})
+        source = dict(node_id=1, endpoint_id=1, can_bind=True)
+        with (patch.object(w, "async_get_snapshot", AsyncMock(return_value={"devices": [source]})),
+              patch.object(w, "_require_client", return_value=object()),
+              patch.object(w, "_read_bindings", AsyncMock(return_value=[binding(2, None)])),
+              patch.object(w, "_write_and_verify_binding_table", AsyncMock(return_value=True))):
+            plan = await w.async_prepare_remove_binding(hass, source_node_id=1, source_endpoint_id=1,
+                target_kind="endpoint", target_node_id=2, target_endpoint_id=1, target_group_id=None)
+            self.assertTrue(plan["has_wildcard_cluster"])
+            result = await w.async_apply_remove_binding(hass, plan_id=plan["plan_id"])
+            self.assertTrue(result["verified"])
+
+    def test_group_cleanup_preserves_ambiguous_wildcard_acl(self):
+        for target in ({"endpoint": 1, "cluster": None},
+                       {"endpoint": 1, "cluster": 6, "deviceType": 256}):
+            entry = dict(privilege=3, authMode=3, subjects=[33], targets=[target])
+            remaining, changed, ambiguous = w._without_group_acl_targets(
+                [entry], group_id=33, endpoint_id=1, clusters={6})
+            self.assertEqual(remaining, [entry])
+            self.assertFalse(changed)
+            self.assertTrue(ambiguous)
+
+    async def test_group_acl_cleanup_rejects_lost_unrelated_rule(self):
+        owned = dict(privilege=3, authMode=3, subjects=[33],
+                     targets=[dict(endpoint=1, cluster=6, deviceType=None)])
+        other = dict(privilege=5, authMode=2, subjects=[99], targets=None)
+        with (patch.object(w, "_read_acl", AsyncMock(side_effect=[[owned, other], []])),
+              patch.object(w, "_write_acl", AsyncMock()),
+              patch.object(w, "_VERIFY_ATTEMPTS", 1),
+              patch.object(w, "_VERIFY_DELAY_SECONDS", 0)):
+            with self.assertRaises(w.StudioWriteError):
+                await w._remove_group_acl_grants(None, node_id=2, endpoint_id=1, group_id=33, clusters=[6])
+
     def test_unknown_acl_usage_is_never_reclaimable(self):
         for targets in (None, [], [{"endpoint": None, "cluster": None}],
                         [{"endpoint": 1, "cluster": 6}]):

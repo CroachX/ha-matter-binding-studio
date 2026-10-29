@@ -954,7 +954,8 @@ async def async_prepare_remove_binding(
         "expires_in_seconds": _PLAN_TTL_SECONDS,
         "route": "native_group" if target_kind == "group" else "direct",
         "source": source,
-        "clusters": sorted({int(entry["cluster_id"]) for entry in removed_entries}),
+        "clusters": sorted({int(entry["cluster_id"]) for entry in removed_entries if entry["cluster_id"] is not None}),
+        "has_wildcard_cluster": any(entry["cluster_id"] is None for entry in removed_entries),
         "removed_entry_count": len(removed_entries),
         "keeps_native_group": target_kind == "group",
         "steps": [
@@ -1015,8 +1016,9 @@ async def async_apply_remove_binding(
             "message": message("binding_removed"),
             "source": source,
             "clusters": sorted(
-                {int(entry["cluster_id"]) for entry in plan["removed_entries"]}
+                {int(entry["cluster_id"]) for entry in plan["removed_entries"] if entry["cluster_id"] is not None}
             ),
+            "has_wildcard_cluster": any(entry["cluster_id"] is None for entry in plan["removed_entries"]),
             "keeps_native_group": plan["target_kind"] == "group",
         }
 
@@ -1514,11 +1516,9 @@ async def _remove_group_key_mapping(
 async def _remove_group_key_set(
     client: Any, *, node_id: int, key_set_id: int
 ) -> None:
-    """Request removal of one private key set after its mapping is gone.
+    """Remove an unreferenced key set and verify its ID is no longer listed.
 
-    Epoch key material is deliberately unreadable.  The successful command
-    result is therefore the available device acknowledgement; a non-success
-    result remains repair-needed instead of being interpreted as absent.
+    Epoch key material is unreadable, but KeySetReadAllIndices exposes IDs.
     """
     from chip.clusters import Objects as clusters
 
@@ -1740,10 +1740,7 @@ async def _remove_group_acl_grants(
     await _write_acl(client, node_id, remaining)
     for _ in range(_VERIFY_ATTEMPTS):
         verified = await _read_acl(client, node_id)
-        if not any(
-            _acl_grants_group(verified, group_id, endpoint_id, cluster_id)
-            for cluster_id in clusters
-        ):
+        if _acl_signature(verified) == _acl_signature(remaining):
             return
         await asyncio.sleep(_VERIFY_DELAY_SECONDS)
     raise StudioWriteError(message("group_acl_remove_unverified"))
@@ -1775,13 +1772,15 @@ def _without_group_acl_targets(
         for target in targets:
             endpoint = target.get("endpoint")
             cluster = target.get("cluster")
-            if endpoint is None:
-                # A wildcard endpoint could authorize another unrecorded member.
+            if endpoint is None or (endpoint == endpoint_id and (
+                cluster is None or target.get("deviceType") is not None
+            )):
+                # Wildcard grants extend beyond the recorded member/clusters.
                 ambiguous = True
                 kept_targets.append(target)
                 continue
             matches_member = endpoint == endpoint_id
-            matches_cluster = cluster is None or cluster in clusters
+            matches_cluster = cluster in clusters
             if matches_member and matches_cluster:
                 entry_changed = True
                 changed = True
