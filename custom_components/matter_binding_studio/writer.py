@@ -2492,6 +2492,14 @@ async def _write_acl(client: Any, node_id: int, entries: list[dict[str, Any]]) -
     result = await send_command("set_acl_entry", node_id=node_id, entry=ordered)
     if _write_result_failed(result):
         raise StudioWriteError(message("acl_write_rejected"))
+    # set_acl_entry replaces the whole list. A new grant alone is not proof
+    # that pre-existing administrator/operate entries survived the write.
+    expected = _acl_signature(entries)
+    for _ in range(_VERIFY_ATTEMPTS):
+        if _acl_signature(await _read_acl(client, node_id)) == expected:
+            return
+        await asyncio.sleep(_VERIFY_DELAY_SECONDS)
+    raise StudioWriteError(message("acl_write_unverified"))
 
 
 def _encode_acl_entry(entry: dict[str, Any]) -> dict[str, Any]:

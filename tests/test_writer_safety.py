@@ -14,6 +14,17 @@ def binding(node, cluster=6):
 
 
 class VerificationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_acl_write_rejects_readback_missing_administrator(self):
+        admin = dict(privilege=5, authMode=2, subjects=[999], targets=None)
+        grant = dict(privilege=3, authMode=2, subjects=[1],
+                     targets=[dict(endpoint=1, cluster=6, deviceType=None)])
+        client = SimpleNamespace(send_raw_command=AsyncMock(return_value=None))
+        with (patch.object(w, "_read_acl", AsyncMock(return_value=[grant])),
+              patch.object(w, "_VERIFY_ATTEMPTS", 1),
+              patch.object(w, "_VERIFY_DELAY_SECONDS", 0)):
+            with self.assertRaises(w.StudioWriteError):
+                await w._write_acl(client, 2, [admin, grant])
+
     async def test_group_members_are_awaited_and_failure_is_reported(self):
         members = [dict(node_id=2, endpoint_id=1), dict(node_id=3, endpoint_id=1)]
         for responses, expected in (([True, True], True), ([True, False], False)):
