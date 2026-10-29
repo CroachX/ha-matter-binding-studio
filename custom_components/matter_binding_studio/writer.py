@@ -1678,15 +1678,15 @@ async def _remove_group_member_if_present(
 async def _verify_group_memberships(
     client: Any, *, members: list[Mapping[str, Any]], group_id: int
 ) -> bool:
-    return all(
-        await _verify_group_membership(
+    for member in members:
+        if not await _verify_group_membership(
             client,
             node_id=int(member["node_id"]),
             endpoint_id=int(member["endpoint_id"]),
             group_id=group_id,
-        )
-        for member in members
-    )
+        ):
+            return False
+    return True
 
 
 async def _verify_group_membership(
@@ -2104,27 +2104,12 @@ async def _write_and_verify_bindings(
     target_endpoint_id: int,
     clusters: list[int],
 ) -> bool:
-    fabric_index = await _read_fabric_index(client, source_node_id)
-    path = f"{source_endpoint_id}/{CLUSTER_BINDING}/{ATTR_BINDING}"
-    for tag_keys in (False, True):
-        payload = [_encode_binding(entry, fabric_index, tag_keys) for entry in bindings]
-        await client.write_attribute(
-            node_id=source_node_id, attribute_path=path, value=payload
-        )
-        for _ in range(_VERIFY_ATTEMPTS):
-            readback = await _read_bindings(client, source_node_id, source_endpoint_id)
-            if all(
-                _binding_exists(
-                    readback,
-                    node_id=target_node_id,
-                    endpoint_id=target_endpoint_id,
-                    cluster_id=cluster_id,
-                )
-                for cluster_id in clusters
-            ):
-                return True
-            await asyncio.sleep(_VERIFY_DELAY_SECONDS)
-    return False
+    # An append replaces the complete list, too. Verifying only the new target
+    # can hide loss of pre-existing relationships.
+    return await _write_and_verify_binding_table(
+        client, source_node_id=source_node_id,
+        source_endpoint_id=source_endpoint_id, bindings=bindings,
+    )
 
 
 async def _write_and_verify_binding_table(
