@@ -481,14 +481,15 @@ def _acl_relationship_references(
     """
     result = {}
     for row in relationships:
-        if row.get("id") and _acl_relationship_names(
-            entry, target_node_id=target_node_id, relationships=[row]
-        ):
+        matched = [cluster for cluster in row.get("clusters", [])
+                   if _acl_relationship_names(entry, target_node_id=target_node_id,
+                       relationships=[dict(row) | {"clusters": [cluster]}])]
+        if row.get("id") and matched:
             result[row["id"]] = {
                 "relationship_id": row["id"], "name": _relationship_presentation_name(row),
                 "source_node_id": row["source"]["node_id"],
                 "source_endpoint_id": row["source"]["endpoint_id"],
-                "clusters": list(row.get("clusters", [])),
+                "clusters": sorted(set(matched)),
             }
     return [result[key] for key in sorted(result)]
 

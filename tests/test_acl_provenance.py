@@ -167,6 +167,11 @@ class ReferenceTests(unittest.TestCase):
         self.assertEqual(w._acl_relationship_references(grant(subject=34, mode=3),
                          target_node_id=2, relationships=rows), [])
 
+    def test_references_list_only_the_capabilities_this_acl_grants(self):
+        refs = w._acl_relationship_references(grant((6,)), target_node_id=2,
+                                             relationships=[self.relationship("a", 1)])
+        self.assertEqual(refs[0]["clusters"], [6])
+
     def test_identity_requires_fabric_and_commissioned_timestamp(self):
         client = NS(server_info=NS(compressed_fabric_id=1234),
                     get_node=lambda _: NS(node_data=NS(date_commissioned=SCOPE["date_commissioned"])))

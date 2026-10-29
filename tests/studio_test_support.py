@@ -23,7 +23,8 @@ def load_studio():
         return (importlib.import_module("studio_under_test.writer"),
                 importlib.import_module("studio_under_test.matter"),
                 importlib.import_module("studio_under_test.group_store"),
-                importlib.import_module("studio_under_test.acl_store"))
+                importlib.import_module("studio_under_test.acl_store"),
+                importlib.import_module("studio_under_test.bulk"))
 
 
-w, matter, group_store, acl_store = load_studio()
+w, matter, group_store, acl_store, bulk = load_studio()
