@@ -5,6 +5,7 @@ import secrets
 import time
 
 from . import writer as w
+from .transactions import serialized_write
 
 
 def group_selections(snapshot, relationship_ids):
@@ -73,6 +74,7 @@ async def prepare(hass, relationship_ids):
     }
 
 
+@serialized_write
 async def apply(hass, plan_id):
     plan = w._take_plan(hass, plan_id, expected_kind="bulk_remove_bindings")
     client = w._require_client(hass)

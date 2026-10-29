@@ -1,4 +1,5 @@
 """Regression tests for real transaction code using isolated device boundaries."""
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -63,3 +64,46 @@ class BindingParsingTests(unittest.TestCase):
         self.assertEqual(rows[0]["targets"]["members"][0]["node_id"], 7)
         self.assertTrue(rows[0]["has_wildcard_cluster"])
         self.assertEqual(rows[0]["clusters"], [6, 8])
+
+
+class SerializationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_different_sources_share_target_transaction_lock(self):
+        hass = SimpleNamespace(data={})
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        acl = []
+
+        @w.serialized_write
+        async def mutate(hass, source):
+            before = list(acl)
+            if source == 1:
+                entered.set()
+                await release.wait()
+            acl[:] = before + [source]
+
+        first = asyncio.create_task(mutate(hass, 1))
+        await entered.wait()
+        second = asyncio.create_task(mutate(hass, 2))
+        await asyncio.sleep(0)
+        self.assertFalse(second.done())
+        release.set()
+        await asyncio.gather(first, second)
+        self.assertEqual(acl, [1, 2])
+
+    async def test_lock_released_after_exception(self):
+        hass = SimpleNamespace(data={})
+
+        @w.serialized_write
+        async def mutate(hass, fail):
+            if fail:
+                raise RuntimeError("device unavailable")
+            return True
+
+        with self.assertRaises(RuntimeError):
+            await mutate(hass, True)
+        self.assertTrue(await asyncio.wait_for(mutate(hass, False), 1))
+
+    def test_all_apply_entrypoints_are_serialized(self):
+        for name in dir(w):
+            if name.startswith("async_apply_"):
+                self.assertTrue(hasattr(getattr(w, name), "__wrapped__"), name)

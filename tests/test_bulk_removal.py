@@ -63,7 +63,7 @@ class BulkRemovalTest(unittest.IsolatedAsyncioTestCase):
         self.w._LOGGER = logging.getLogger("test.bulk")
         tree = ast.parse((ROOT / "bulk.py").read_text())
         tree.body = [n for n in tree.body if not isinstance(n, ast.ImportFrom)]
-        self.api = {"w": self.w}
+        self.api = {"w": self.w, "serialized_write": runpy.run_path(str(ROOT / "transactions.py"))["serialized_write"]}
         exec(compile(tree, "bulk.py", "exec"), self.api)
 
     async def prepare(self, ids):

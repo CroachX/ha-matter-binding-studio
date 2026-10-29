@@ -18,6 +18,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from .messages import message
+from .transactions import serialized_write
 
 from .const import (
     ATTR_ACCESS_CONTROL_ENTRIES_PER_FABRIC,
@@ -201,6 +202,7 @@ async def async_prepare_remove_acl(
     }
 
 
+@serialized_write
 async def async_apply_remove_acl(hass: HomeAssistant, *, plan_id: str) -> dict[str, Any]:
     """Apply a reviewed ACL reclaim transaction and verify the whole table."""
     plan = _take_plan(hass, plan_id, expected_kind="remove_acl")
@@ -294,6 +296,7 @@ async def async_prepare_cleanup_group(
     }
 
 
+@serialized_write
 async def async_apply_cleanup_group(
     hass: HomeAssistant, *, plan_id: str
 ) -> dict[str, Any]:
@@ -648,6 +651,7 @@ async def async_prepare_unicast(
     }
 
 
+@serialized_write
 async def async_apply_unicast(hass: HomeAssistant, *, plan_id: str) -> dict[str, Any]:
     """Apply one reviewed plan and return only verified transaction state."""
     plan = _take_plan(hass, plan_id)
@@ -854,6 +858,7 @@ async def async_prepare_groupcast(
     }
 
 
+@serialized_write
 async def async_apply_groupcast(hass: HomeAssistant, *, plan_id: str) -> dict[str, Any]:
     """Provision and verify one reviewed automatic groupcast relationship."""
     plan = _take_plan(hass, plan_id, expected_kind="groupcast")
@@ -1071,6 +1076,7 @@ async def async_prepare_remove_binding(
     }
 
 
+@serialized_write
 async def async_apply_remove_binding(
     hass: HomeAssistant, *, plan_id: str
 ) -> dict[str, Any]:
