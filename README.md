@@ -33,6 +33,36 @@ application or a source that could not be read. Administrator rules remain
 protected. The legacy reclaim API rejects requests without writing. Cleanup of
 recorded Studio group grants remains a separate, guarded operation.
 
+### Unreleased: ACL provenance and known sharing
+
+Current source adds a private ACL write journal; this is **not included in
+v0.5.1** and has not been deployed or device-tested.
+
+- Persist intent before an ACL mutation; mark verified only after full-table
+  readback. Initial save failure prevents I/O. Final save failure leaves pending
+  evidence and prevents the following Binding commit.
+- Record only unique, concrete operate entries newly appended by Studio.
+  Existing reused grants stay unknown unless already recorded. Cleanup never
+  adopts the remaining targets of a legacy rule.
+- Match semantic fingerprints, compressed Fabric ID, Node ID and commissioning
+  timestamp, not list indexes or names. Unknown identity, another fabric or
+  recommissioning means unknown. Observed missing/edited/duplicate entries
+  retire earlier evidence. Pending/uncertain operations block attribution.
+- The admin-only `get_acl_overview` response adds `provenance`, `references`
+  and `references_complete`. References identify each source endpoint and only
+  the capabilities granted by this ACL. Several source endpoints can share one
+  CASE grant. References are snapshot-derived, not authoritative stored counts.
+- Cached/incomplete discovery is marked incomplete. **Generic reclaim stays
+  disabled**, including recorded grants with no known references. Binding
+  deletion never deletes its ACL.
+
+The journal uses HA's private `matter_binding_studio_acl_provenance` Store;
+include it in HA backups. It contains no passwords or Group Key material. No
+legacy adoption runs, and the panel does not yet render these additional fields.
+Historical fingerprints cannot detect an identical external remove/recreate
+between observations or prove that restored backups are current. See the
+[provenance design](docs/acl-provenance.md) before designing any reclaim policy.
+
 It can create a **single-target native unicast** relationship after a reviewed
 plan and explicit confirmation. The transaction reads the current source
 Binding list and target ACL, adds only the needed target access entry, writes
@@ -173,9 +203,11 @@ expired/changed plans, partial failure and persistence failures.
 
 ## Validation boundary and remaining work
 
-Local tests/builds are not device certification. Earlier `0.5.0` deployment
-and panel checks do not validate the new device-write paths. Before relying on
-those paths with a particular device combination:
+Local tests/builds are not device certification. Deployed v0.5.1 loading,
+read-only API and desktop/mobile checks passed; see the
+[dated deployment record](docs/validation-v0.5.1.md). These checks do not validate
+device-write paths or unreleased provenance changes. Before relying on write
+paths with a particular device combination:
 
 - Validate discovery and loading on the target HA/Matter Server version.
 - Test physical single-target and multi-target control after readback.
@@ -188,7 +220,8 @@ Not implemented yet:
 - Editing an existing relationship or its group members in place.
 - A guided repair/resume UI. Partial groups retain metadata; idle-group cleanup
   can be retried, but provisioning is not automatically resumed or rolled back.
-- Durable provenance for general ACL reclaim, including ownership of old rules.
+- Rendering provenance/sharing diagnostics and a reviewed reclaim policy. The
+  unreleased journal does not establish ownership of old rules.
 - Persistent last-verified timestamps and operation history in the panel.
 
 State projection, automation suggestions and heuristic binding recommendations

@@ -337,6 +337,11 @@ does not disable cleanup of recorded, concrete Studio group grants. Future
 general reclaim needs durable provenance, fresh usage evidence, changed-table
 rejection and complete-table verification, not merely a missing Binding match.
 
+Post-v0.5.1 local code adds an ACL write journal and API provenance / known
+sharing metadata; see [ACL provenance](acl-provenance.md). It is not deployed.
+It records new verified writes only, never adopts legacy rules, and does not
+enable reclaim. Sharing is snapshot-derived, not an authoritative refcount.
+
 ## 7. Safety rules
 
 - Discovery is read-only.
@@ -434,12 +439,15 @@ Confirmed:
 
 1. Validate v0.5.1 safety fixes against the target HA/Matter Server and
    disposable device relationships, with separate physical-control checks.
-2. Add durable ACL ownership/provenance before enabling general reclaim.
+2. Validate the unreleased ACL journal on HA, add panel diagnostics and design
+   reviewed reclaim eligibility; provenance alone does not permit deletion.
 3. Design guided repair/resume and editing of existing group memberships.
 4. Add persistent last-verified timestamps and operation history.
 
 Current offline coverage includes the production writer/store lifecycle with
 a fake Matter transport, single-use/expiry and changed-table guards, unknown
 table/read failures, shared-resource serialization, and partial-cleanup retry.
-HA UI rendering, actual Matter Server wire compatibility and physical-device
-effects remain separate acceptance gates. No real Binding is changed by tests.
+The v0.5.1 read-only deployment/UI checks passed; see the
+[deployment record](validation-v0.5.1.md). Later provenance changes, Matter write
+compatibility and physical effects remain separate acceptance gates. No real
+Binding is changed by tests.
