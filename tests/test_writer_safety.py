@@ -152,3 +152,56 @@ class CleanupSafetyTests(unittest.IsolatedAsyncioTestCase):
         client = SimpleNamespace(read_attribute=AsyncMock(side_effect=RuntimeError("offline")))
         with patch.object(matter, "_cached_attribute", return_value=[]):
             self.assertEqual(await matter._async_read_bindings(client, None, 1, 1, fresh=True), ([], True))
+
+
+class GroupResourceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_bridge_endpoints_share_one_acl_budget(self):
+        admin = {"privilege": 5, "authMode": 2, "subjects": [1], "targets": None}
+        members = [dict(node_id=10, endpoint_id=ep, server_capabilities=[6]) for ep in (1, 2)]
+        async def capacity(client, node, entries):
+            return dict(used=len(entries), maximum=4, targets_per_entry=3)
+        with (patch.object(w, "_read_acl", AsyncMock(return_value=[admin] * 3)),
+              patch.object(w, "_read_acl_capacity", side_effect=capacity)):
+            with self.assertRaises(w.StudioWriteError):
+                await w._preflight_group_acl_capacity(None, members=members, group_id=33, clusters=[6])
+
+    async def test_independent_nodes_have_independent_acl_budgets(self):
+        admin = {"privilege": 5, "authMode": 2, "subjects": [1], "targets": None}
+        members = [dict(node_id=n, endpoint_id=1, server_capabilities=[6]) for n in (10, 11)]
+        async def capacity(client, node, entries):
+            return dict(used=len(entries), maximum=4, targets_per_entry=3)
+        with (patch.object(w, "_read_acl", AsyncMock(return_value=[admin] * 3)),
+              patch.object(w, "_read_acl_capacity", side_effect=capacity)):
+            result = await w._preflight_group_acl_capacity(None, members=members, group_id=33, clusters=[6])
+            self.assertEqual([row["entries_to_add"] for row in result], [1, 1])
+
+    async def test_key_inventory_uses_command_and_rejects_unknown_response(self):
+        with patch.object(w, "_key_set_read_all_command", return_value=object()):
+            for response in ({"groupKeySetIDs": [0, 256]}, {"0": [0, 256]}, SimpleNamespace(groupKeySetIDs=[0, 256])):
+                with patch.object(w, "_send_device_command", AsyncMock(return_value=response)):
+                    self.assertEqual(await w._read_key_set_ids(None, 1), {0, 256})
+            for response in ({}, {"groupKeySetIDs": None}, {"groupKeySetIDs": ["bad"]}):
+                with patch.object(w, "_send_device_command", AsyncMock(return_value=response)), self.assertRaises(w.StudioWriteError):
+                    await w._read_key_set_ids(None, 1)
+
+    async def test_unmapped_key_sets_count_against_capacity(self):
+        async def read(client, node, path):
+            return {"0/63/0": [], "0/63/1": [], "0/63/2": 4, "0/63/3": 2}[path]
+        with (patch.object(w, "_read_attribute", side_effect=read),
+              patch.object(w, "_read_key_set_ids", AsyncMock(return_value={0, 256}))):
+            with self.assertRaises(w.StudioWriteError):
+                await w._preflight_group_capacity(None, source_node_id=1, member_node_ids=[2])
+
+    async def test_map_removal_preserves_other_mapping_and_encodes_wire_fields(self):
+        before = [{"groupId": 33, "groupKeySetID": 256}, {"groupId": 34, "groupKeySetID": 257}]
+        client = SimpleNamespace(write_attribute=AsyncMock(return_value=None))
+        with (patch.object(w, "_read_attribute", AsyncMock(side_effect=[before, before[1:]])),
+              patch.object(w, "_read_fabric_index", AsyncMock(return_value=1))):
+            await w._remove_group_key_mapping(client, node_id=2, group_id=33, key_set_id=256)
+            self.assertEqual(client.write_attribute.call_args.kwargs["value"],
+                             [{"groupId": 34, "groupKeySetID": 257, "fabricIndex": 1}])
+
+    def test_group_name_truncates_utf8_safely(self):
+        value = w._group_wire_name("Study 主臥室智慧燈群組")
+        self.assertLessEqual(len(value.encode("utf-8")), 16)
+        self.assertTrue("Study 主臥室智慧燈群組".startswith(value))

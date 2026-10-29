@@ -1212,18 +1212,24 @@ async def _preflight_group_acl_capacity(
     the review phase and immediately before the transaction begins.
     """
     results: list[dict[str, Any]] = []
+    planned_acl: dict[int, list[dict[str, Any]]] = {}
     for member in members:
         node_id = int(member["node_id"])
         endpoint_id = int(member["endpoint_id"])
         supported = {int(cluster) for cluster in member.get("server_capabilities", [])}
         selected = [cluster for cluster in clusters if cluster in supported]
-        entries = await _read_acl(client, node_id)
+        if node_id not in planned_acl:
+            planned_acl[node_id] = await _read_acl(client, node_id)
+        entries = planned_acl[node_id]
         required = _required_group_acl_clusters(entries, group_id, endpoint_id, selected)
+        if required and not _has_admin_acl(entries):
+            raise StudioWriteError(message("member_admin_missing"))
         capacity = await _read_acl_capacity(client, node_id, entries)
         entries_to_add = _new_group_acl_entries(
             group_id, endpoint_id, required, capacity
         )
         _require_acl_capacity(capacity, len(entries_to_add))
+        planned_acl[node_id] = [*entries, *entries_to_add]
         results.append(
             {
                 "target": dict(member),
@@ -1277,7 +1283,8 @@ async def _preflight_group_capacity(
             raise StudioWriteError(
                 message("group_capacity_unknown")
             )
-        if len(group_map) >= max_keys or (
+        key_set_ids = await _read_key_set_ids(client, node_id)
+        if len(key_set_ids) >= max_keys or (
             requires_group_slot and len(group_table) >= max_groups
         ):
             raise StudioWriteError(
@@ -1289,12 +1296,31 @@ async def _preflight_group_capacity(
             "group_map": group_map,
             "group_table": group_table,
             "group_ids": group_ids,
-            "key_set_ids": {entry["key_set_id"] for entry in group_map},
+            "key_set_ids": key_set_ids,
             "max_groups": max_groups,
             "max_keys": max_keys,
             "requires_group_slot": requires_group_slot,
         }
     return states
+
+
+def _key_set_read_all_command() -> Any:
+    from chip.clusters import Objects as clusters
+    return clusters.GroupKeyManagement.Commands.KeySetReadAllIndices()
+
+
+async def _read_key_set_ids(client: Any, node_id: int) -> set[int]:
+    """Read actual allocated key sets, including keys without a GroupKeyMap."""
+    result = await _send_device_command(
+        client, node_id=node_id, endpoint_id=0, command=_key_set_read_all_command()
+    )
+    values = _field(result, ("groupKeySetIDs", "GroupKeySetIDs", 0))
+    if _write_result_failed(result) or not _is_sequence_struct(values):
+        raise StudioWriteError(message("group_capacity_unknown"))
+    ids = [_optional_int(value) for value in values]
+    if any(value is None or not 0 <= value <= 65535 for value in ids):
+        raise StudioWriteError(message("group_capacity_unknown"))
+    return set(ids)
 
 
 def _allocate_group_id(used: set[int]) -> int:
@@ -1426,6 +1452,7 @@ async def _write_and_verify_group_key_map(
     key_set_id: int,
 ) -> bool:
     path = f"0/{CLUSTER_GROUP_KEY_MANAGEMENT}/{ATTR_GROUP_KEY_MAP}"
+    expected = sorted((e["group_id"], e["key_set_id"]) for e in _parse_group_key_map(entries))
     fabric_index = await _read_fabric_index(client, node_id)
     for tag_keys in (False, True):
         payload = [
@@ -1441,11 +1468,7 @@ async def _write_and_verify_group_key_map(
             continue
         for _ in range(_VERIFY_ATTEMPTS):
             readback = _parse_group_key_map(await _read_attribute(client, node_id, path))
-            if any(
-                entry["group_id"] == group_id
-                and entry["key_set_id"] == key_set_id
-                for entry in readback
-            ):
+            if sorted((e["group_id"], e["key_set_id"]) for e in readback) == expected:
                 return True
             await asyncio.sleep(_VERIFY_DELAY_SECONDS)
     return False
@@ -1465,10 +1488,14 @@ async def _remove_group_key_mapping(
             message("group_key_changed")
         )
     remaining = [entry for entry in existing if entry["group_id"] != group_id]
+    expected = sorted((e["group_id"], e["key_set_id"]) for e in remaining)
     fabric_index = await _read_fabric_index(client, node_id)
     for tag_keys in (False, True):
         payload = [
-            _encode_fabric_struct(entry, _GROUP_KEY_MAP_TAGS, fabric_index, tag_keys)
+            _encode_fabric_struct(
+                {"groupId": entry["group_id"], "groupKeySetID": entry["key_set_id"]},
+                _GROUP_KEY_MAP_TAGS, fabric_index, tag_keys,
+            )
             for entry in remaining
         ]
         result = await client.write_attribute(
@@ -1478,7 +1505,7 @@ async def _remove_group_key_mapping(
             continue
         for _ in range(_VERIFY_ATTEMPTS):
             readback = _parse_group_key_map(await _read_attribute(client, node_id, path))
-            if not any(entry["group_id"] == group_id for entry in readback):
+            if sorted((e["group_id"], e["key_set_id"]) for e in readback) == expected:
                 return
             await asyncio.sleep(_VERIFY_DELAY_SECONDS)
     raise StudioWriteError(message("group_key_remove_unverified"))
@@ -1495,6 +1522,14 @@ async def _remove_group_key_set(
     """
     from chip.clusters import Objects as clusters
 
+    mapping = _parse_group_key_map(await _read_attribute(
+        client, node_id, f"0/{CLUSTER_GROUP_KEY_MANAGEMENT}/{ATTR_GROUP_KEY_MAP}"
+    ))
+    if any(entry["key_set_id"] == key_set_id for entry in mapping):
+        raise StudioWriteError(message("group_key_changed"))
+    if key_set_id not in await _read_key_set_ids(client, node_id):
+        return  # A previous cleanup attempt may already have removed it.
+
     result = await _send_device_command(
         client,
         node_id=node_id,
@@ -1504,6 +1539,8 @@ async def _remove_group_key_set(
         ),
     )
     if _write_result_failed(result):
+        raise StudioWriteError(message("key_set_remove_rejected"))
+    if key_set_id in await _read_key_set_ids(client, node_id):
         raise StudioWriteError(message("key_set_remove_rejected"))
 
 
@@ -1545,7 +1582,7 @@ async def _add_group_member(
         node_id=node_id,
         endpoint_id=endpoint_id,
         command=clusters.Groups.Commands.AddGroup(
-            groupID=group_id, groupName=name[:_GROUP_NAME_MAX_LENGTH]
+            groupID=group_id, groupName=_group_wire_name(name)
         ),
     )
     if _write_result_failed(result):
@@ -1554,6 +1591,11 @@ async def _add_group_member(
         client, node_id=node_id, endpoint_id=endpoint_id, group_id=group_id
     ):
         raise StudioWriteError(message("membership_unverified"))
+
+
+def _group_wire_name(name: str) -> str:
+    """The Matter name limit is UTF-8 bytes, not Python characters."""
+    return name.encode("utf-8")[:_GROUP_NAME_MAX_LENGTH].decode("utf-8", errors="ignore")
 
 
 async def _remove_group_member_if_present(
