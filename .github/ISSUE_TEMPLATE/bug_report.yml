@@ -1,0 +1,25 @@
+name: Bug report
+description: Report a Studio problem without sharing household secrets.
+body:
+  - type: markdown
+    attributes:
+      value: "Do not post tokens, pairing codes, Group Keys, raw Store files or unreviewed Matter dumps."
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions and devices
+      description: Studio release/commit, HA, Matter Server, models/firmware, and whether bridged.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Action, expected result and actual result
+      description: Include failing step/code. Was this preview, read-only or a device write? Was physical control tested?
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Reviewed diagnostics and recovery attempts
+      description: Review attachments for private data. List retries, restarts, other controllers and partial changes. Never delete private metadata to troubleshoot.
