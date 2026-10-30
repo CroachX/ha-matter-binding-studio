@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import BindingList from "./BindingList";
+import SupportPanel, { RecoveryAdvice } from "./SupportPanel";
 import { errorMessage, formatMessage, resolveLanguage, studioCall, type Message } from "./messages";
 import { copy, type Copy } from "./copy";
 
@@ -130,6 +131,9 @@ type AclEntry = {
     relationship_names: string[];
     safe_to_reclaim: boolean;
   };
+  provenance?: { state: "studio_recorded" | "unknown" };
+  references?: Array<{ relationship_id: string; name: string; clusters: number[] }>;
+  references_complete?: boolean;
 };
 
 type AclOverview = {
@@ -241,6 +245,7 @@ export default function App({ hass }: { hass?: HomeAssistant }) {
             <StudioData hass={hass} snapshot={snapshot} refresh={refresh} t={t} />
           </>
         ) : null}
+        <SupportPanel hass={hass} t={t} />
       </main>
     </div>
   );
@@ -279,6 +284,7 @@ function BindingComposer({
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
   const [messageIsError, setMessageIsError] = useState(false);
+  const [recovery, setRecovery] = useState<"plan" | "apply" | "group">("plan");
 
   const sources = snapshot.devices.filter((device) => device.can_bind);
   const source = sources.find((device) => endpointKey(device) === sourceKey);
@@ -336,6 +342,7 @@ function BindingComposer({
     if (!hass || !source || !selectedTargets.length || !clusters.length) return;
     setWorking(true);
     setMessage(null);
+    setRecovery("plan");
     try {
       const nextPlan = selectedTargets.length === 1
         ? await studioCall<UnicastPlan>(hass, {
@@ -370,6 +377,7 @@ function BindingComposer({
     if (!hass || !plan || !confirmed) return;
     setWorking(true);
     setMessage(null);
+    setRecovery(plan.route === "native_group" ? "group" : "apply");
     try {
       const result = await studioCall<ApplyResult>(hass, {
         type: plan.route === "direct"
@@ -380,9 +388,6 @@ function BindingComposer({
       });
       setMessage(result.message);
       setMessageIsError(!result.success || !result.verified);
-      if (result.success && result.verified) {
-        await refresh();
-      }
     } catch (error) {
       setMessage(errorMessage(error));
       setMessageIsError(true);
@@ -390,6 +395,7 @@ function BindingComposer({
       // A reviewed plan is single-use, even when its write needs repair.
       setPlan(null);
       setConfirmed(false);
+      await refresh();
       setWorking(false);
     }
   };
@@ -510,6 +516,7 @@ function BindingComposer({
         </div>
       ) : null}
       {message ? <p className={messageIsError ? "mbs-warning" : "mbs-success"}>{formatMessage(message, t)}</p> : null}
+      {message && messageIsError ? <RecoveryAdvice kind={recovery} t={t} /> : null}
     </section>
   );
 }
@@ -637,8 +644,10 @@ function StudioData({
   const [groupCleanupWorking, setGroupCleanupWorking] = useState(false);
   const [groupCleanupMessage, setGroupCleanupMessage] = useState<Message | null>(null);
   const [groupCleanupMessageIsError, setGroupCleanupMessageIsError] = useState(false);
+  const [cleanupRecovery, setCleanupRecovery] = useState<"plan" | "group">("plan");
 
   const reviewGroupCleanup = async (controlSet: ControlSet) => {
+    setCleanupRecovery("plan");
     if (!hass || !controlSet.managed_by_studio || controlSet.active_relationships > 0) {
       setGroupCleanupMessage(
         controlSet.active_relationships > 0 ? t.groupCleanupNeedsBindingRemoval : t.groupCleanupUnavailable,
@@ -666,6 +675,7 @@ function StudioData({
     if (!hass || !groupCleanupPlan || !groupCleanupConfirmed) return;
     setGroupCleanupWorking(true);
     setGroupCleanupMessage(null);
+    setCleanupRecovery("group");
     try {
       const result = await studioCall<ApplyResult>(hass, {
         type: "matter_binding_studio/apply_cleanup_group",
@@ -674,15 +684,13 @@ function StudioData({
       });
       setGroupCleanupMessage(result.message);
       setGroupCleanupMessageIsError(!result.success || !result.verified);
-      if (result.success && result.verified) {
-        await refresh();
-      }
     } catch (error) {
       setGroupCleanupMessage(errorMessage(error));
       setGroupCleanupMessageIsError(true);
     } finally {
       setGroupCleanupPlan(null);
       setGroupCleanupConfirmed(false);
+      await refresh();
       setGroupCleanupWorking(false);
     }
   };
@@ -754,6 +762,7 @@ function StudioData({
             {formatMessage(groupCleanupMessage, t)}
           </p>
         ) : null}
+        {groupCleanupMessage && groupCleanupMessageIsError ? <RecoveryAdvice kind={cleanupRecovery} t={t} /> : null}
       </section>
 
       </details>
@@ -1074,6 +1083,15 @@ function AclEntryRow({
       {entry.usage.relationship_names.length ? (
         <p className="mbs-meta">{entry.usage.relationship_names.join("；")}</p>
       ) : null}
+      <details className="mbs-recovery">
+        <summary>{t.aclEvidence}</summary>
+        <p>{entry.provenance?.state === "studio_recorded" ? t.aclRecorded : t.aclUnrecorded}</p>
+        <p>{formatCount(t.aclReferences, entry.references?.length ?? 0)}</p>
+        {entry.references?.length ? <ul>{entry.references.map(ref => <li key={ref.relationship_id}>
+          {ref.name} · {ref.clusters.map(cluster => clusterName(cluster, t)).join(" · ")}
+        </li>)}</ul> : null}
+        {!entry.references_complete ? <p className="mbs-meta">{t.aclReferencesIncomplete}</p> : null}
+      </details>
       {entry.usage.safe_to_reclaim && onReviewRemoval ? (
         <div className="mbs-card-actions">
           <button

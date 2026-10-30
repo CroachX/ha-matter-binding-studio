@@ -136,6 +136,12 @@ let previewRemoval: string[] = [];
 const previewHass: HomeAssistant = {
   locale: { language: "zh-Hant" },
   async callWS<T>(message: { type: string; [key: string]: unknown }): Promise<T> {
+    if (message.type === "matter_binding_studio/get_diagnostics") {
+      return { format_version: 1, versions: { studio: "preview-only" }, snapshot: {
+        relationships: { direct: previewSnapshot.relationships.length },
+        warning_count: 0, binding_inventory_complete: false,
+      }, recent_operations: [], limitations: ["mock_data_no_device_io"] } as T;
+    }
     if (message.type === "matter_binding_studio/get_snapshot") {
       return structuredClone(previewSnapshot) as T;
     }
@@ -195,6 +201,9 @@ const previewHass: HomeAssistant = {
               relationship_names: ["Smart light → Smart light"],
               safe_to_reclaim: false,
             },
+            provenance: { state: "studio_recorded" },
+            references: [{ relationship_id: "preview-reference", name: "Smart light → Smart light", clusters: [6, 8] }],
+            references_complete: false,
           },
           {
             entry_index: 2,
@@ -202,7 +211,7 @@ const previewHass: HomeAssistant = {
             auth_mode: "case",
             subjects: ["Retired controller"],
             targets: [{ endpoint: "Study - Smart light", capability: "Color temperature" }],
-            usage: { state: "unused", relationship_names: [], safe_to_reclaim: true },
+            usage: { state: "unknown", relationship_names: [], safe_to_reclaim: false },
           },
           {
             entry_index: 3,
@@ -210,49 +219,13 @@ const previewHass: HomeAssistant = {
             auth_mode: "group",
             subjects: ["Unused native group"],
             targets: [{ endpoint: "Study - Smart light", capability: "On / Off" }],
-            usage: { state: "unused", relationship_names: [], safe_to_reclaim: true },
+            usage: { state: "unknown", relationship_names: [], safe_to_reclaim: false },
           },
         ],
       } as T;
     }
-    if (message.type === "matter_binding_studio/prepare_remove_acl") {
-      const entries = [
-        {
-          entry_index: 2,
-          kind: "operate",
-          auth_mode: "case",
-          subjects: ["Retired controller"],
-          targets: [{ endpoint: "Study - Smart light", capability: "Color temperature" }],
-          usage: { state: "unused", relationship_names: [], safe_to_reclaim: true },
-        },
-        {
-          entry_index: 3,
-          kind: "operate",
-          auth_mode: "group",
-          subjects: ["Unused native group"],
-          targets: [{ endpoint: "Study - Smart light", capability: "On / Off" }],
-          usage: { state: "unused", relationship_names: [], safe_to_reclaim: true },
-        },
-      ].filter((entry) => Array.isArray(message.entry_indexes) ? message.entry_indexes.includes(entry.entry_index) : entry.entry_index === message.entry_index);
-      return {
-        plan_id: "preview-acl-removal",
-        expires_in_seconds: 300,
-        target: previewSnapshot.devices[1],
-        entry: entries[0],
-        entries,
-        capacity_before: { used: 3, maximum: 4, available: 1, targets_per_entry: 3 },
-        steps: [
-          "Preview only — no ACL will be changed.",
-          "The remaining ACL table would be read back after removal.",
-        ],
-      } as T;
-    }
-    if (message.type === "matter_binding_studio/apply_remove_acl") {
-      return {
-        success: true,
-        verified: true,
-        message: "Preview ACL reclaim completed. No Matter device was changed.",
-      } as T;
+    if (["matter_binding_studio/prepare_remove_acl", "matter_binding_studio/apply_remove_acl"].includes(message.type)) {
+      throw { code: "plan_failed", studio_message: { code: "acl_reclaim_unproven" } };
     }
     if (message.type === "matter_binding_studio/prepare_cleanup_group") {
       return {
@@ -370,13 +343,21 @@ function Preview() {
     if (scenario === "acl-full" && request.type.includes("/prepare_")) {
       throw { code: "plan_failed", message: "The target ACL is full (3/3).", studio_message: { code: "acl_full", params: { used: 3, maximum: 3 } } };
     }
+    if (scenario === "apply-timeout" && request.type.includes("/apply_")) {
+      throw { code: "matter_operation_failed", message: "Simulated lost response; device outcome unknown." };
+    }
+    if (scenario === "group-repair" && request.type === "matter_binding_studio/apply_groupcast") {
+      previewSnapshot.native_control_sets[0]!.status = "repair_needed";
+      return { success: false, verified: false, repair_needed: true,
+        message: "Preview group needs repair.", message_i18n: { code: "group_provision_unverified" } } as T;
+    }
     return previewHass.callWS<T>(request);
   } };
   return <>
     <div style={{ padding: 12, display: "flex", flexWrap: "wrap", gap: 12 }}>
       <span>Preview only · 模擬資料，不連線 HA</span>
       <select aria-label="Preview language" value={language} onChange={e => setLanguage(e.target.value)}><option value="zh-Hant">繁體中文</option><option value="zh-Hans">简体中文</option><option value="en">English</option></select>
-      <select aria-label="Preview scenario" value={scenario} onChange={e => setScenario(e.target.value)}><option value="normal">Normal</option><option value="acl-full">ACL full error</option></select>
+      <select aria-label="Preview scenario" value={scenario} onChange={e => setScenario(e.target.value)}><option value="normal">Normal</option><option value="acl-full">ACL full error</option><option value="apply-timeout">Apply response lost</option><option value="group-repair">Group needs repair</option></select>
     </div>
     <App hass={hass} />
   </>;

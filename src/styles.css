@@ -292,3 +292,21 @@
   .mbs-route-label { align-self: flex-start; }
   .mbs-relationship-actions { align-self: flex-start; align-items: flex-start; }
 }
+.mbs-support { margin-top: 20px; }
+.mbs-support > section { padding: 0 19px 19px; }
+.mbs-support textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 12px 0;
+  padding: 10px;
+  color: inherit;
+  background: var(--card-background-color, #fff);
+  border: 1px solid var(--divider-color, #ddd);
+  border-radius: 8px;
+  font: 12px/1.5 monospace;
+  resize: vertical;
+}
+.mbs-recovery { margin: 10px 0; font-size: 13px; }
+.mbs-recovery summary { cursor: pointer; }
+.mbs-recovery p { line-height: 1.6; }

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar
+from functools import wraps
 from typing import Any
 
 import voluptuous as vol
@@ -28,6 +30,8 @@ from .messages import message, wire_payload, LocalizedMessage
 
 from .matter import async_get_snapshot
 from . import bulk
+from .diagnostics import async_get_config_entry_diagnostics
+from .support_data import operation_summary, snapshot_summary
 from .writer import (
     StudioWriteError,
     async_apply_cleanup_group,
@@ -44,6 +48,41 @@ from .writer import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_OPERATION_CONTEXT = ContextVar("studio_support_operation", default=None)
+
+
+def _require_active_admin(handler):
+    """Protect every command, including reads and calls after entry unload."""
+    @wraps(handler)
+    async def guarded(hass, connection, msg):
+        if not _is_admin(connection):
+            _send_error(connection, msg["id"], "forbidden", message("admin_only"))
+            return
+        if not hass.data.get(DOMAIN, {}).get("_entry_active"):
+            _send_error(connection, msg["id"], "not_loaded", message("studio_not_loaded"))
+            return
+        token = _OPERATION_CONTEXT.set((hass, msg["type"].removeprefix(f"{DOMAIN}/")))
+        try:
+            await handler(hass, connection, msg)
+        finally:
+            _OPERATION_CONTEXT.reset(token)
+    return guarded
+
+
+def _record_outcome(**kwargs):
+    context = _OPERATION_CONTEXT.get()
+    if context is None:
+        return
+    hass, operation = context
+    try:
+        record = operation_summary(operation, **kwargs)
+    except Exception:  # Diagnostics must never turn an applied write into an error.
+        _LOGGER.debug("Studio support summary unavailable")
+        return
+    if record is not None:
+        history = hass.data[DOMAIN].setdefault("_support_operations", [])
+        history.append(record)
+        del history[:-10]
 
 
 async def async_setup(hass: HomeAssistant) -> None:
@@ -52,6 +91,7 @@ async def async_setup(hass: HomeAssistant) -> None:
     if domain_data.get("_ws_registered"):
         return
     websocket_api.async_register_command(hass, ws_get_snapshot)
+    websocket_api.async_register_command(hass, ws_get_diagnostics)
     websocket_api.async_register_command(hass, ws_get_acl_overview)
     websocket_api.async_register_command(hass, ws_prepare_remove_acl)
     websocket_api.async_register_command(hass, ws_apply_remove_acl)
@@ -69,7 +109,9 @@ async def async_setup(hass: HomeAssistant) -> None:
 
 
 def _send_result(connection, message_id, result):
-    connection.send_result(message_id, wire_payload(result))
+    payload = wire_payload(result)
+    _record_outcome(result=payload)
+    connection.send_result(message_id, payload)
 
 
 def _send_error(connection, message_id, code, value):
@@ -78,6 +120,7 @@ def _send_error(connection, message_id, code, value):
     error = {"code": code, "message": str(value)}
     if isinstance(value, LocalizedMessage):
         error["studio_message"] = value.descriptor
+    _record_outcome(error=error)
     connection.send_message({"id": message_id, "type": "result", "success": False, "error": error})
 
 
@@ -99,13 +142,28 @@ def _send_matter_operation_error(
 
 @websocket_api.websocket_command({vol.Required("type"): WS_TYPE_GET_SNAPSHOT})
 @websocket_api.async_response
+@_require_active_admin
 async def ws_get_snapshot(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Return a native-Matter read model without changing the fabric."""
-    _send_result(connection, msg["id"], await async_get_snapshot(hass))
+    snapshot = await async_get_snapshot(hass)
+    try:
+        hass.data[DOMAIN]["_support_snapshot"] = snapshot_summary(snapshot)
+    except Exception:
+        hass.data[DOMAIN].pop("_support_snapshot", None)
+        _LOGGER.debug("Studio support snapshot unavailable")
+    _send_result(connection, msg["id"], snapshot)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/get_diagnostics"})
+@websocket_api.async_response
+@_require_active_admin
+async def ws_get_diagnostics(hass, connection, msg):
+    """Export only sanitized cached data, never the raw Matter fabric."""
+    _send_result(connection, msg["id"], await async_get_config_entry_diagnostics(hass))
 
 
 @websocket_api.websocket_command(
@@ -116,6 +174,7 @@ async def ws_get_snapshot(
     }
 )
 @websocket_api.async_response
+@_require_active_admin
 async def ws_get_acl_overview(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -152,6 +211,7 @@ async def ws_get_acl_overview(
     }
 )
 @websocket_api.async_response
+@_require_active_admin
 async def ws_prepare_remove_acl(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -186,6 +246,7 @@ async def ws_prepare_remove_acl(
     }
 )
 @websocket_api.async_response
+@_require_active_admin
 async def ws_apply_remove_acl(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -213,6 +274,7 @@ async def ws_apply_remove_acl(
     }
 )
 @websocket_api.async_response
+@_require_active_admin
 async def ws_prepare_cleanup_group(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -241,6 +303,7 @@ async def ws_prepare_cleanup_group(
     }
 )
 @websocket_api.async_response
+@_require_active_admin
 async def ws_apply_cleanup_group(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -272,6 +335,7 @@ async def ws_apply_cleanup_group(
     }
 )
 @websocket_api.async_response
+@_require_active_admin
 async def ws_prepare_unicast(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -309,6 +373,7 @@ async def ws_prepare_unicast(
     }
 )
 @websocket_api.async_response
+@_require_active_admin
 async def ws_apply_unicast(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -349,6 +414,7 @@ async def ws_apply_unicast(
     }
 )
 @websocket_api.async_response
+@_require_active_admin
 async def ws_prepare_groupcast(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -385,6 +451,7 @@ async def ws_prepare_groupcast(
     }
 )
 @websocket_api.async_response
+@_require_active_admin
 async def ws_apply_groupcast(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -419,6 +486,7 @@ async def ws_apply_groupcast(
     }
 )
 @websocket_api.async_response
+@_require_active_admin
 async def ws_prepare_remove_binding(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -457,6 +525,7 @@ async def ws_prepare_remove_binding(
     }
 )
 @websocket_api.async_response
+@_require_active_admin
 async def ws_apply_remove_binding(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -484,6 +553,7 @@ async def ws_apply_remove_binding(
     vol.Required("relationship_ids"): vol.All([str], vol.Length(min=1, max=200)),
 })
 @websocket_api.async_response
+@_require_active_admin
 async def ws_prepare_bulk_remove(hass, connection, msg):
     if not _is_admin(connection):
         _send_error(connection, msg["id"], "forbidden", message("admin_only"))
@@ -505,6 +575,7 @@ async def ws_prepare_bulk_remove(hass, connection, msg):
     vol.Required("confirm"): True,
 })
 @websocket_api.async_response
+@_require_active_admin
 async def ws_apply_bulk_remove(hass, connection, msg):
     if not _is_admin(connection):
         _send_error(connection, msg["id"], "forbidden", message("admin_only"))

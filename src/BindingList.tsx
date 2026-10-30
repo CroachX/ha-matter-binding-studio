@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { RecoveryAdvice } from "./SupportPanel";
 import type { Copy } from "./copy";
 import { endpointLabel, relationshipTargetLabel, clusterName } from "./App";
 import { errorMessage, formatMessage, studioCall, type Message } from "./messages";
@@ -92,6 +93,7 @@ export default function BindingList({ hass, relationships, refresh, t }: {
     </div>
     {error ? <p role="alert" className="mbs-warning">{formatMessage(error, t)}{unconfirmed ? ` ${t.refreshBeforeRetry}` : ""}</p> : null}
     {results.length ? <div aria-live="polite" className="mbs-batch-results"><strong>{t.removalResults}</strong>{results.map(r => <p key={`${r.source.node_id}:${r.source.endpoint_id}`} className={r.status === "verified" ? "mbs-success" : "mbs-warning"}>{endpointLabel(r.source)} — {t[r.status]} ({r.relationship_ids.length})</p>)}</div> : null}
+    {error || results.some(result => result.status !== "verified") ? <RecoveryAdvice kind={unconfirmed || results.length ? "batch" : "plan"} t={t} /> : null}
     <dialog ref={dialog} className="mbs-dialog" aria-labelledby="mbs-delete-title" onCancel={e => { if (working) e.preventDefault(); else setPlan(null); }}>
       {plan ? <><h2 id="mbs-delete-title">{t.deleteSelected.replace("{count}", String(plan.relationships.length))}</h2>
         <ul>{plan.relationships.map(row => <li key={row.id}>{endpointLabel(row.source)} → {relationshipTargetLabel(row)}</li>)}</ul>

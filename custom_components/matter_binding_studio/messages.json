@@ -1,4 +1,9 @@
 {
+  "studio_not_loaded": {
+    "en": "Matter Binding Studio is not loaded. Load the integration and review a new plan.",
+    "zh-Hant": "Matter Binding Studio 尚未載入。請載入整合後重新檢視計畫。",
+    "zh-Hans": "Matter Binding Studio 尚未加载。请加载集成后重新查看计划。"
+  },
   "acl_reclaim_unproven": {
     "en": "Generic ACL removal is disabled: absence of a Binding does not prove a rule is unused. Inspect only; use reviewed Studio-owned group cleanup where applicable.",
     "zh-Hant": "暫停一般 ACL 清理：沒有 Binding 不代表規則未被使用。目前僅供檢視；Studio 自建群組可使用獨立的審核清理流程。",

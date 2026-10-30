@@ -58,7 +58,8 @@ class MessageTests(unittest.TestCase):
     def test_websocket_error_keeps_code_and_translation_metadata(self):
         tree = ast.parse((ROOT / "api.py").read_text())
         node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_send_error")
-        env = {"StudioWriteError": RuntimeError, "LocalizedMessage": messages["LocalizedMessage"]}
+        env = {"StudioWriteError": RuntimeError, "LocalizedMessage": messages["LocalizedMessage"],
+               "_record_outcome": lambda **kwargs: None}
         exec(compile(ast.Module(body=[node], type_ignores=[]), "api.py", "exec"), env)
         sent = []
         env["_send_error"](SimpleNamespace(send_message=sent.append), 7, "plan_failed", RuntimeError(message("acl_full", used=3, maximum=3)))

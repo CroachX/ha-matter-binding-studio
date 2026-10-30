@@ -22,12 +22,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _async_register_panel(hass)
 
     await api.async_setup(hass)
+    hass.data[DOMAIN]["_entry_active"] = True
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload the Studio panel."""
     frontend.async_remove_panel(hass, PANEL_NAME)
+    hass.data[DOMAIN]["_entry_active"] = False
+    hass.data[DOMAIN].pop("_pending_write_plans", None)
     hass.data[DOMAIN].pop(entry.entry_id, None)
     return True
 
@@ -36,7 +39,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
     """Register the administrator-only Studio panel and its static bundle."""
     from homeassistant.components.http import StaticPathConfig
 
-    try:
+    if not hass.data[DOMAIN].get("_static_registered"):
         await hass.http.async_register_static_paths(
             [
                 StaticPathConfig(
@@ -46,9 +49,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
                 )
             ]
         )
-    except RuntimeError:
-        # A config-entry reload can re-register an unchanged static path.
-        pass
+        hass.data[DOMAIN]["_static_registered"] = True
 
     await panel_custom.async_register_panel(
         hass,
