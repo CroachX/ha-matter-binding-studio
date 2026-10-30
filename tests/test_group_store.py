@@ -15,6 +15,18 @@ def group():
 
 
 class GroupStoreTests(unittest.IsolatedAsyncioTestCase):
+    async def test_corrupt_registry_cannot_be_loaded_as_empty(self):
+        for raw in ([], {}, {"groups": []}, {"groups": {"33": {}}},
+                    {"groups": {"999": group().to_dict()}}):
+            with self.subTest(raw=raw):
+                storage = SimpleNamespace(async_load=AsyncMock(return_value=raw), async_save=AsyncMock())
+                store = ManagedGroupStore(None, store=storage)
+                with self.assertRaises((ValueError, KeyError)):
+                    await store.async_load()
+                with self.assertRaises(RuntimeError):
+                    store.list_groups()
+                storage.async_save.assert_not_awaited()
+
     async def test_concurrent_load_only_reads_once(self):
         storage = SimpleNamespace(async_load=AsyncMock(return_value=None))
         store = ManagedGroupStore(None, store=storage)

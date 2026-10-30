@@ -91,7 +91,19 @@ class ManagedGroupStore:
             if self._data is not None:
                 return
             raw = await self._store.async_load()
-            self._data = {"groups": dict((raw or {}).get("groups", {}))}
+            if raw is not None and (not isinstance(raw, dict)
+                    or not isinstance(raw.get("groups"), dict)):
+                raise ValueError("Unsupported managed group store")
+            groups = dict(raw["groups"]) if raw is not None else {}
+            # Do not publish a partially decoded registry or silently treat a
+            # corrupt backup as an empty registry, losing the repair evidence.
+            for key, value in groups.items():
+                if not isinstance(value, dict):
+                    raise ValueError("Unsupported managed group record")
+                group = ManagedGroup.from_dict(value)
+                if str(group.group_id) != key or group.status not in ("pending", "active", "repair_needed"):
+                    raise ValueError("Unsupported managed group identity or status")
+            self._data = {"groups": groups}
 
     def list_groups(self) -> list[ManagedGroup]:
         data = self._require_loaded()
